@@ -51,12 +51,44 @@ end
 
 # Transitions
 function find_distances(image, target)
-    width = image[2] - image[1]
-    Δ1 = image[1] - target[2]
-    Δ2 = image[2] - target[1]
-    Δ3 = image[2] - target[2]
-    Δ4 = image[2] - (target[1] + width)
-    return -Δ1, -Δ2, -Δ3, -Δ4
+    A, B = target
+    C, D = image
+    W = D - C
+    @assert W > 0
+
+    Δ1 = abs(B-C)
+    Δ2 = -abs(A-D)
+    # check if target contains image
+    if target[1] <= image[1] <= image[2] <= target[2]
+        Δ3 = abs(B-D)
+        Δ4 = -abs(A-C)
+    # check if image is larger than target
+    elseif image[1] <= target[1] <= target[2] <= image[2]
+        Δ3 = 0  
+        Δ4 = 0
+    else
+        if D > B # image UB is greather than state UB 
+            if !(A <= C <= B)
+                Δ1 *= -1
+            end
+            Δ3 = -abs(B-D)
+            Δ4 = -abs(A+W-D)
+        else
+            if !(A <= D <= B)
+                Δ2 *= -1
+            end
+            Δ3 = abs(B-W-C)
+            Δ4 = abs(A-C) 
+        end
+        if Δ4 > Δ3 
+            Δ3 = 0
+            Δ4 = 0
+        end
+    end
+    
+    @assert Δ2 <= Δ1
+    @assert Δ4 <= Δ3
+    return Δ1, Δ2, Δ3, Δ4
 end
 
 # this is all I need now for transition bounds... for now
@@ -64,8 +96,20 @@ function simple_transition_bounds(image, state, dist)
     ndims = size(image,1)
     dis_comps = zeros(ndims, 4)
     [dis_comps[i,:] .= find_distances([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
+
     p_low = (cdf(dist, dis_comps[1,3]) - cdf(dist, dis_comps[1,4]))*(cdf(dist, dis_comps[2,3]) - cdf(dist, dis_comps[2,4]))
+    if p_low < 0.0 && p_low > -1e-10
+        p_low = 0.0
+    end
+
     p_high = (cdf(dist, dis_comps[1,1]) - cdf(dist, dis_comps[1,2]))*(cdf(dist, dis_comps[2,1]) - cdf(dist, dis_comps[2,2]))
+    if p_high < 0.0 && p_high > -1e-10
+        p_high = 0.0
+    end
+
+    @assert p_low <= p_high
+    @assert p_low >= 0 && p_low <= 1
+    @assert p_high >= 0 && p_high <= 1
     return p_low, p_high
 end
 
