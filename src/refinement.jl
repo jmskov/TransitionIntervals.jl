@@ -58,11 +58,17 @@ function refine_states!(explicit_states, states_to_refine)
 end
 
 function refine_images!(explicit_states, state_images, states_to_refine, user_defined_map)
-    new_state_idx = length(state_images) - length(states_to_refine) + 1
+    dim_factor = size(state_images[1],1)^2
+    original_state_num = length(explicit_states) - dim_factor*length(states_to_refine)   # this should be the length of the original images...
+    @assert length(state_images) == original_state_num + length(states_to_refine)
+
+    new_state_idx = original_state_num + 1 # ! this is the error.
     deleteat!(state_images, states_to_refine)
     for state_idx in new_state_idx:1:length(explicit_states) 
         push!(state_images, user_defined_map(explicit_states[state_idx]))
     end
+    @assert length(state_images) == length(explicit_states)
+
     return state_images
 end
 
@@ -76,7 +82,7 @@ end
 function refine_transitions(explicit_states, state_index_dict, state_images, states_to_refine, Plow, Phigh, compact_state, noise_distribution)
     n_states_new = length(explicit_states) + 1 # add one for the sink state
     n_states_old = size(Plow,2)
-    unrefined_states = setdiff(1:n_states_old-1, states_to_refine)
+    unrefined_states = sort(setdiff(1:n_states_old-1, states_to_refine))
     num_unrefined_states = length(unrefined_states)
     
     Plow_new = spzeros(n_states_new, n_states_new)
@@ -86,19 +92,26 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     unrefined_states_to_recomp = Dict()
     for unrefined_state_index in unrefined_states 
         target_idxs = []
+        # get the successor states of the unrefined state
         succ_states = findall(x->x>0, Phigh[unrefined_state_index, :]) # old indeces
 
         # If the successor state is in states_to_refine, then we need to recompute the transition
         for succ_state in succ_states
             if succ_state ∈ states_to_refine
-                push!(target_idxs, state_index_dict[succ_state]...)
+                # recall that state_index_dict maps the original state index to the set of new state indeces
+                push!(target_idxs, state_index_dict[succ_state])
             end
         end
 
         if !isempty(target_idxs)
-            # Get the transformed unrefined state index
-            unrefined_states_to_recomp[get_refined_index(unrefined_state_index, states_to_refine)] = sort(unique(target_idxs))
+            unrefined_states_to_recomp[unrefined_state_index] = sort(unique(target_idxs))
         end
+    end
+
+    # reverse index dict maps the new indeces to the old (unrefined) index
+    reverse_index_dict = Dict()
+    for (key, value) in state_index_dict
+        reverse_index_dict[value] = key
     end
 
     # Resue the old transitions between unrefined states
@@ -112,12 +125,12 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     Phigh_new[end,end] = 1.0
 
     # Now, recompute the transitions between old unrefined states and new refined states
-    for (unrefined_state_index, target_idxs) in unrefined_states_to_recomp
-        for target_idx in target_idxs
-            @assert target_idx > num_unrefined_states 
-            p_low, p_high = simple_transition_bounds(state_images[unrefined_state_index], explicit_states[target_idx], noise_distribution)
-            Plow_new[unrefined_state_index, target_idx] = p_low
-            Phigh_new[unrefined_state_index, target_idx] = p_high
+    for (unrefined_state_index, target_set) in unrefined_states_to_recomp
+        for target_indeces in target_set
+            original_target_index = reverse_index_dict[target_indeces]
+            new_index = get_refined_index(unrefined_state_index, states_to_refine)
+            Plow_new[new_index, target_indeces] .= Plow[unrefined_state_index, original_target_index] 
+            Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
         end
     end
 
