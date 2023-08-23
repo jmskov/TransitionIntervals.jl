@@ -34,7 +34,7 @@ end
 function plot_state_labels!(plt, states)
     for (i, state) in enumerate(states)
         state_mean = calculate_state_mean(state)
-        annotate!(plt, state_mean[1], state_mean[2], text("$i", :black, :center, 11,))
+        annotate!(plt, state_mean[1], state_mean[2], text("$i", :black, :center, 5,))
     end
 end
 

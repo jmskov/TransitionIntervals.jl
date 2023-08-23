@@ -109,7 +109,15 @@ function simple_transition_bounds(image, state, dist)
 
     @assert p_low <= p_high
     @assert p_low >= 0 && p_low <= 1
-    @assert p_high >= 0 && p_high <= 1
+    @assert p_high >= 0
+
+    if p_high > 1.0
+        if p_high <= 1+1e-10
+            p_high = 1.0
+        else
+            @assert p_high <= 1+1e-10
+        end
+    end
     return p_low, p_high
 end
 

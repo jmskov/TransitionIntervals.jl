@@ -126,18 +126,21 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
     # Now, recompute the transitions between old unrefined states and new refined states
     for (unrefined_state_index, target_set) in unrefined_states_to_recomp
+        new_index = get_refined_index(unrefined_state_index, states_to_refine)
         for target_indeces in target_set
             original_target_index = reverse_index_dict[target_indeces]
-            new_index = get_refined_index(unrefined_state_index, states_to_refine)
 
             if all(state_images[unrefined_state_index] .== 0)
                 # cannot reuse the lower-bound when we are splitting states
                 Plow_new[new_index, target_indeces] .= 0  
                 Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
             else
-                p_low, p_high = simple_transition_bounds(state_images[unrefined_state_index], explicit_states[original_target_index], noise_distribution)
-                Plow_new[new_index, target_indeces] .= p_low
-                Phigh_new[new_index, target_indeces] .= p_high
+                for target_idx in target_indeces
+                    # ! todo: handle the zero image case...
+                    p_low, p_high = simple_transition_bounds(state_images[new_index], explicit_states[target_idx], noise_distribution)
+                    Plow_new[new_index, target_idx] = p_low
+                    Phigh_new[new_index, target_idx] = p_high
+                end
             end
         end
     end
