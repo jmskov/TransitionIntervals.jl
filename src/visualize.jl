@@ -43,3 +43,15 @@ function save_figure_files(plt, filename)
     serialize(filename * ".plt", plt)
 end
 
+function plot_all_results(results_dir, states, results_matrix; threshold=0.9)
+    figure_filename = "$results_dir/sat-lower-bound"
+    plt = plot_with_alpha(states, results_matrix[:,3])
+    save_figure_files(plt, figure_filename)
+    figure_filename = "$results_dir/sat-upper-bound"
+    plt = plot_with_alpha(states, results_matrix[:,4])
+    save_figure_files(plt, figure_filename)
+    classifications = classify_results(results_matrix, threshold)
+    plt = plot_with_classifications(states, classifications)
+    figure_filename = "$results_dir/sat-classification"
+    save_figure_files(plt, figure_filename)
+end

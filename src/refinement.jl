@@ -1,5 +1,16 @@
 # Functions that help refinement
 
+# refine abstraction
+function refine_abstraction(result_matrix, threshold, states, images, Plow, Phigh, full_state, noise_distribution, image_map)
+    # here, perform  the cool refinement stuff
+    states_to_refine, _ = find_states_to_refine(result_matrix, threshold, Phigh) 
+    new_state_index_dict = refine_states!(states, states_to_refine)
+    refine_images!(states, images, states_to_refine, image_map)
+    new_Plow, new_Phigh = refine_transitions(states, new_state_index_dict, images, states_to_refine, Plow, Phigh, full_state, noise_distribution)
+    return new_Plow, new_Phigh
+    # return new_Plow, new_Phigh, new_state_images, new_state_index_dict
+end
+
 function find_states_to_refine(result_matrix, threshold)
     classifications = classify_results(result_matrix, threshold)
     states_to_refine = findall(x->x==0, classifications)

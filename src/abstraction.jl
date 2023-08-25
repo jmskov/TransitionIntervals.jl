@@ -1,5 +1,14 @@
 # Functions for abstraction
 
+# Full abstraction
+function imc_abstraction(full_state, spacing, image_map, noise_distribution)
+    grid, grid_spacing = grid_generator(full_state[:,1], full_state[:,2], spacing)
+    states = calculate_explicit_states(grid, grid_spacing)
+    images = calculate_all_images(states, image_map)
+    Plow, Phigh = calculate_transition_probabilities(states, images, full_state, noise_distribution)
+    return states, images, Plow, Phigh
+end
+
 # States
 function grid_generator(L, U, δ)
 	generator = nothing
