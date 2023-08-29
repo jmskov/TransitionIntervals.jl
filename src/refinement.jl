@@ -73,10 +73,13 @@ function refine_images!(explicit_states, state_images, states_to_refine, user_de
     original_state_num = length(explicit_states) - dim_factor*length(states_to_refine)   # this should be the length of the original images...
     @assert length(state_images) == original_state_num + length(states_to_refine)
 
-    new_state_idx = original_state_num + 1 # ! this is the error.
+    new_state_idx = original_state_num + 1
     deleteat!(state_images, states_to_refine)
+
+    progress_meter = Progress(length(states_to_refine), "Refining images...")
     for state_idx in new_state_idx:1:length(explicit_states) 
         push!(state_images, user_defined_map(explicit_states[state_idx]))
+        next!(progress_meter)
     end
     @assert length(state_images) == length(explicit_states)
 
@@ -135,6 +138,19 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     Plow_new[end,end] = 1.0 
     Phigh_new[end,end] = 1.0
 
+    num_new_states =  n_states_new - n_states_old 
+    n_transitions = num_unrefined_states*num_new_states + num_new_states*(n_states_new + 1)
+    progress_meter = Progress(n_transitions, "Calculating refined transitions...")
+    warn_count = 0
+
+    all_state_means = calculate_state_mean.(explicit_states)
+    all_image_means = calculate_state_mean.(state_images)
+    all_state_radii = state_radius.(explicit_states)
+    all_image_radii = state_radius.(state_images)
+    ϵ_crit = calculate_ϵ_crit(noise_distribution)
+
+    transitions_skipped = 0
+
     # Now, recompute the transitions between old unrefined states and new refined states
     for (unrefined_state_index, target_set) in unrefined_states_to_recomp
         new_index = get_refined_index(unrefined_state_index, states_to_refine)
@@ -147,6 +163,12 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
                 Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
             else
                 for target_idx in target_indeces
+                    next!(progress_meter)
+                    # do fast check here
+                    if !fast_check(all_image_means[unrefined_state_index], all_state_means[target_idx], ϵ_crit, all_image_radii[unrefined_state_index], all_state_radii[target_idx])
+                        transitions_skipped += 1
+                        continue
+                    end
                     # ! todo: handle the zero image case...
                     p_low, p_high = simple_transition_bounds(state_images[new_index], explicit_states[target_idx], noise_distribution)
                     Plow_new[new_index, target_idx] = p_low
@@ -159,14 +181,25 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     # Now, recompute the transitions between all new refined states with the old unrefined states
     for i = num_unrefined_states+1:n_states_new-1
         for j = 1:n_states_new-1
+            next!(progress_meter)
+
+            if !fast_check(all_image_means[i], all_state_means[j], ϵ_crit, all_image_radii[i], all_state_radii[j])
+                transitions_skipped += 1
+                continue
+            end
+
             p_low, p_high = simple_transition_bounds(state_images[i], explicit_states[j], noise_distribution)
             Plow_new[i,j] = p_low
             Phigh_new[i,j] = p_high
         end
+        next!(progress_meter)
+
         p_low, p_high = simple_transition_bounds(state_images[i], compact_state, noise_distribution)
         Plow_new[i,end] = 1 - p_high
         Phigh_new[i,end] = 1 - p_low
     end 
+
+    @info "Skipped $transitions_skipped transitions out of $n_transitions total transitions."
 
     # Verify the transition matrices
     for row in eachrow(Plow_new)

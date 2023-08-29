@@ -4,6 +4,8 @@ using Distributions
 using SparseArrays
 using Serialization 
 
+using ProgressMeter
+
 using Plots
 
 # Write your package code here.
