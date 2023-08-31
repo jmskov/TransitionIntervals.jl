@@ -76,8 +76,8 @@ function refine_images!(explicit_states, state_images, states_to_refine, user_de
     new_state_idx = original_state_num + 1
     deleteat!(state_images, states_to_refine)
 
-    progress_meter = Progress(length(states_to_refine), "Refining images...")
-    for state_idx in new_state_idx:1:length(explicit_states) 
+    progress_meter = Progress(length(new_state_idx:1:length(explicit_states)), "Refining images...")
+    for state_idx in new_state_idx:1:length(explicit_states)
         push!(state_images, user_defined_map(explicit_states[state_idx]))
         next!(progress_meter)
     end
@@ -104,6 +104,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
     # Get the successor states of the unrefined images 
     unrefined_states_to_recomp = Dict()
+    num_old_state_transitions = 0
     for unrefined_state_index in unrefined_states 
         target_idxs = []
         # get the successor states of the unrefined state
@@ -119,6 +120,35 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
         if !isempty(target_idxs)
             unrefined_states_to_recomp[unrefined_state_index] = sort(unique(target_idxs))
+            num_old_state_transitions += length(unrefined_states_to_recomp[unrefined_state_index])
+        end
+    end
+
+    # get the possible successor states of the refined images (avoid doing all the comp lol)
+    refined_states_to_recomp = Dict()
+    num_new_state_transitions = 0
+    for old_idx in states_to_refine
+        target_idxs = []
+        # get the successor states 
+        succ_states = findall(x->x>0, Phigh[old_idx, :]) # old indeces
+
+        for succ_state in succ_states
+
+            # if the successor state is a refined state
+            if succ_state ∈ states_to_refine
+                push!(target_idxs, state_index_dict[succ_state]...)
+            # if the successor state is an unrefined state
+            else
+                push!(target_idxs, get_refined_index(succ_state, states_to_refine))
+            end
+        end
+
+        # get the new indeces 
+        new_indeces = state_index_dict[old_idx]
+        for idx in new_indeces
+            @assert idx ∉ keys(refined_states_to_recomp)
+            refined_states_to_recomp[idx] = sort(unique(target_idxs))
+            num_new_state_transitions += length(refined_states_to_recomp[idx]) + 1 # one for the sink state!
         end
     end
 
@@ -138,21 +168,14 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     Plow_new[end,end] = 1.0 
     Phigh_new[end,end] = 1.0
 
-    num_new_states =  n_states_new - n_states_old 
-    n_transitions = num_unrefined_states*num_new_states + num_new_states*(n_states_new + 1)
-    progress_meter = Progress(n_transitions, "Calculating refined transitions...")
+    progress_meter = Progress(num_old_state_transitions, "Calculating refined transitions...")
     warn_count = 0
 
-    all_state_means = calculate_state_mean.(explicit_states)
-    all_image_means = calculate_state_mean.(state_images)
-    all_state_radii = state_radius.(explicit_states)
-    all_image_radii = state_radius.(state_images)
-    ϵ_crit = calculate_ϵ_crit(noise_distribution)
-
-    transitions_skipped = 0
-
     # Now, recompute the transitions between old unrefined states and new refined states
+    progress_meter = Progress(length(keys(unrefined_states_to_recomp)), "Calculating refined transitions from unrefined states...")
+
     for (unrefined_state_index, target_set) in unrefined_states_to_recomp
+        next!(progress_meter)
         new_index = get_refined_index(unrefined_state_index, states_to_refine)
         for target_indeces in target_set
             original_target_index = reverse_index_dict[target_indeces]
@@ -163,12 +186,6 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
                 Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
             else
                 for target_idx in target_indeces
-                    next!(progress_meter)
-                    # do fast check here
-                    if !fast_check(all_image_means[unrefined_state_index], all_state_means[target_idx], ϵ_crit, all_image_radii[unrefined_state_index], all_state_radii[target_idx])
-                        transitions_skipped += 1
-                        continue
-                    end
                     # ! todo: handle the zero image case...
                     p_low, p_high = simple_transition_bounds(state_images[new_index], explicit_states[target_idx], noise_distribution)
                     Plow_new[new_index, target_idx] = p_low
@@ -179,27 +196,24 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     end
 
     # Now, recompute the transitions between all new refined states with the old unrefined states
-    for i = num_unrefined_states+1:n_states_new-1
-        for j = 1:n_states_new-1
+
+    progress_meter = Progress(num_new_state_transitions, "Calculating refined transitions from refined states...")
+    for i in num_unrefined_states+1:n_states_new-1
+
+        # states to recompute
+        target_idxs = refined_states_to_recomp[i]
+        for j = target_idxs
             next!(progress_meter)
-
-            if !fast_check(all_image_means[i], all_state_means[j], ϵ_crit, all_image_radii[i], all_state_radii[j])
-                transitions_skipped += 1
-                continue
-            end
-
             p_low, p_high = simple_transition_bounds(state_images[i], explicit_states[j], noise_distribution)
             Plow_new[i,j] = p_low
             Phigh_new[i,j] = p_high
         end
-        next!(progress_meter)
+        # next!(progress_meter)
 
         p_low, p_high = simple_transition_bounds(state_images[i], compact_state, noise_distribution)
         Plow_new[i,end] = 1 - p_high
         Phigh_new[i,end] = 1 - p_low
     end 
-
-    @info "Skipped $transitions_skipped transitions out of $n_transitions total transitions."
 
     # Verify the transition matrices
     for row in eachrow(Plow_new)

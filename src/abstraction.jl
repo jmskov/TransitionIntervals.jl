@@ -142,22 +142,6 @@ function state_radius(state)
     return 0.5*sqrt(sum((state[:,2] - state[:,1]).^2))
 end
 
-function calculate_ϵ_crit(dist)
-    epsilon = 0.01
-    P = 0.0
-    while P != 1.0
-        P = cdf(dist, epsilon)
-        epsilon *= 2
-    end
-    return epsilon
-end
-
-"Determine the set of states that will have non-zero transition probability upper bounds."
-function fast_check(mean_pt, mean_target, ϵ_crit, image_radius, set_radius)
-    flag = sqrt(sum((mean_pt - mean_target).^2)) < ϵ_crit + image_radius + set_radius
-    return flag
-end
-
 function calculate_transition_probabilities(explicit_states, all_images, compact_state, noise_distribution)
     nstates = length(explicit_states)+1
     Plow, Phigh = initialize_transition_matrices(nstates)
