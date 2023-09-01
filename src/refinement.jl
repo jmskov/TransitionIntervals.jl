@@ -87,7 +87,7 @@ function refine_images!(explicit_states, state_images, states_to_refine, user_de
     new_state_idx = original_state_num + 1
     deleteat!(state_images, states_to_refine)
 
-    progress_meter = Progress(length(new_state_idx:1:length(explicit_states)), "Refining images...")
+    progress_meter = Progress(length(new_state_idx:1:length(explicit_states)), "Refining images...", dt=STATUS_BAR_PERIOD)
     for state_idx in new_state_idx:1:length(explicit_states)
         push!(state_images, user_defined_map(explicit_states[state_idx]))
         next!(progress_meter)
@@ -179,11 +179,10 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     Plow_new[end,end] = 1.0 
     Phigh_new[end,end] = 1.0
 
-    progress_meter = Progress(num_old_state_transitions, "Calculating refined transitions...")
     warn_count = 0
 
     # Now, recompute the transitions between old unrefined states and new refined states
-    progress_meter = Progress(length(keys(unrefined_states_to_recomp)), "Calculating refined transitions from unrefined states...")
+    progress_meter = Progress(length(keys(unrefined_states_to_recomp)), "Calculating refined transitions from unrefined states...", dt=STATUS_BAR_PERIOD)
 
     for (unrefined_state_index, target_set) in unrefined_states_to_recomp
         next!(progress_meter)
@@ -212,7 +211,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
     # Now, recompute the transitions between all new refined states with the old unrefined states
 
-    progress_meter = Progress(num_new_state_transitions, "Calculating refined transitions from refined states...")
+    progress_meter = Progress(num_new_state_transitions, "Calculating refined transitions from refined states...", dt=STATUS_BAR_PERIOD)
     for i in num_unrefined_states+1:n_states_new-1
 
         # states to recompute
@@ -223,8 +222,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
             Plow_new[i,j] = p_low
             Phigh_new[i,j] = p_high
         end
-        # next!(progress_meter)
-
+        next!(progress_meter)
         p_low, p_high = simple_transition_bounds(state_images[i], compact_state, noise_distribution)
         Plow_new[i,end] = 1 - p_high
         Phigh_new[i,end] = 1 - p_low

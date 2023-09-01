@@ -43,7 +43,7 @@ function calculate_explicit_states(grid, grid_spacing)
 end
 
 function calculate_all_images(explicit_states, user_defined_map)
-    progress_meter = Progress(length(explicit_states), "Computing state images...")
+    progress_meter = Progress(length(explicit_states), "Computing state images...", dt=STATUS_BAR_PERIOD)
     images = Array{Array{Float64,2},1}(undef, length(explicit_states))
     for (i, state) in enumerate(explicit_states)
         images[i] = user_defined_map(state) 
@@ -153,7 +153,7 @@ function calculate_transition_probabilities(explicit_states, all_images, compact
     Plow, Phigh = initialize_transition_matrices(nstates)
 
     n_transitions = size(Plow,1)^2
-    progress_meter = Progress(n_transitions, "Computing state images...")
+    progress_meter = Progress(n_transitions, "Computing state images...", dt=STATUS_BAR_PERIOD)
 
     for (i, image) in enumerate(all_images)
         for (j, state) in enumerate(explicit_states)

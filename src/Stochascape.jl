@@ -5,6 +5,7 @@ using SparseArrays
 using Serialization 
 
 using ProgressMeter
+global STATUS_BAR_PERIOD = 30.0
 
 using Plots
 
