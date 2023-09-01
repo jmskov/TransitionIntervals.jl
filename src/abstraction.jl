@@ -28,10 +28,16 @@ function grid_generator(L, U, δ)
 end
 
 function calculate_explicit_states(grid, grid_spacing)
-    # initialize an array of 2x2 matrices
+    # initialize an array of nx2 matrices
+    n = length(grid_spacing)
     states = Array{Array{Float64,2},1}(undef, length(grid))
     for (i, grid_point) in enumerate(grid)
-        states[i] = [grid_point[1] grid_point[1] + grid_spacing[1]; grid_point[2] grid_point[2] + grid_spacing[2]]
+        state = zeros(Float64, n, 2)
+        for j in 1:n
+            state[j,1] = grid_point[j]
+            state[j,2] = grid_point[j] + grid_spacing[j]
+        end
+        states[i] = state
     end
     return states
 end

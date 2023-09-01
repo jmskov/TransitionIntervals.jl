@@ -53,23 +53,34 @@ function uniform_refinement(state)
     return new_states
 end
 
-function refine_states!(explicit_states, states_to_refine)
+function refine_states!(explicit_states, states_to_refine; min_size=0.001)
     new_states = []
     state_map_dict = Dict()
     new_state_idx = length(explicit_states) - length(states_to_refine) + 1
+    states_skipped = []
     for state_idx in states_to_refine
+        if !all(explicit_states[state_idx][:,2] - explicit_states[state_idx][:,1] .> min_size)
+            push!(states_skipped, state_idx)
+            continue
+        end
         refined_states = uniform_refinement(explicit_states[state_idx])
         push!(new_states, refined_states...)
         state_map_dict[state_idx] = new_state_idx:1:(new_state_idx+length(refined_states)-1)
         new_state_idx += length(refined_states)
     end
+
+    if length(states_skipped) > 0
+        states_to_refine = setdiff(states_to_refine, states_skipped)
+        @warn "Skipped $(length(states_skipped)) states because they were too small."
+    end
+
     deleteat!(explicit_states, states_to_refine)
     explicit_states = push!(explicit_states, new_states...)
     return state_map_dict 
 end
 
 function refine_images!(explicit_states, state_images, states_to_refine, user_defined_map)
-    dim_factor = size(state_images[1],1)^2
+    dim_factor = 2^size(state_images[1],1)
     original_state_num = length(explicit_states) - dim_factor*length(states_to_refine)   # this should be the length of the original images...
     @assert length(state_images) == original_state_num + length(states_to_refine)
 
@@ -182,6 +193,10 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
             if all(state_images[unrefined_state_index] .== 0)
                 # cannot reuse the lower-bound when we are splitting states
+                if warn_count < 5
+                    @warn "Zero-valued image!"
+                    warn_count += 1
+                end
                 Plow_new[new_index, target_indeces] .= 0  
                 Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
             else
