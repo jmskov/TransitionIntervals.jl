@@ -45,8 +45,9 @@ end
 function calculate_all_images(explicit_states, user_defined_map)
     progress_meter = Progress(length(explicit_states), "Computing state images...", dt=STATUS_BAR_PERIOD)
     images = Array{Array{Float64,2},1}(undef, length(explicit_states))
-    for (i, state) in enumerate(explicit_states)
-        images[i] = user_defined_map(state) 
+
+    Threads.@threads for i in eachindex(explicit_states)
+        images[i] = user_defined_map(explicit_states[i]) 
         next!(progress_meter)
     end
     return images
@@ -67,7 +68,7 @@ function label_imdp_states(imdp, label_fcn, states)
 end
 
 # Transitions
-function find_distances(image, target)
+function additive_noise_distances(image, target)
     A, B = target
     C, D = image
     W = D - C
@@ -108,18 +109,82 @@ function find_distances(image, target)
     return Δ1, Δ2, Δ3, Δ4
 end
 
+function multiplicative_noise_distances(image, target)
+    A, B = target
+    C, D = image
+
+    # let's see how this ai generated code works...
+    # Todo: Δ1 can also be things not Inf possibly...
+    if C > 0 && D > 0
+        Δ1 = B / C
+    elseif C < 0 && D < 0
+        Δ1 = A / D
+    else
+        # if B/C <= 0 && A / D <= 0
+        Δ1 = Inf
+        # else
+            # Δ1 = max(B/C, A/D)
+        # end
+    end
+    Δ2 = ifelse(C > 0 && D > 0, A/D, ifelse(C < 0 && D < 0, B/C, 0))
+    # Δ4 = ifelse(C > 0 && D > 0, A/C, ifelse(D < 0 && C < 0, B/D, 0))
+    # Δ3 = ifelse(C > 0 && D > 0, B/D, ifelse(C < 0 && D < 0, A/C, min(max(A/C, 0), max(B/D, 0))))
+
+    Δ3 = B/D
+    Δ4 = A/C
+    
+    if Δ4 > Δ3
+        Δ3 = 0
+        Δ4 = 0
+    end
+
+    if Δ2 > Δ1
+        Δ1 = Inf
+        Δ2 = 0
+    end
+
+    # check for NaN...
+    if isnan(Δ1)
+        Δ1 = Inf
+    end
+    if isnan(Δ2)
+        Δ2 = 0
+    end
+    if isnan(Δ3)
+        Δ3 = 0
+    end
+    if isnan(Δ4)
+        Δ4 = 0
+    end
+    
+    Δ1 = Inf
+    # Δ2 = 0
+    # Δ3 = 0
+    # Δ4 = 0
+
+    @assert Δ2 <= Δ1
+    @assert Δ4 <= Δ3
+    return Δ1, Δ2, Δ3, Δ4
+end
+
 # this is all I need now for transition bounds... for now
 function simple_transition_bounds(image, state, dist)
+    if MULTIPLICATIVE_NOISE_FLAG
+        distances_function = multiplicative_noise_distances
+    else
+        distances_function = additive_noise_distances
+    end
+
     ndims = size(image,1)
     dis_comps = zeros(ndims, 4)
-    [dis_comps[i,:] .= find_distances([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
+    [dis_comps[i,:] .= distances_function([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
 
-    p_low = (cdf(dist, dis_comps[1,3]) - cdf(dist, dis_comps[1,4]))*(cdf(dist, dis_comps[2,3]) - cdf(dist, dis_comps[2,4]))
+    p_low = prod(cdf(dist, dis_comps[i,3]) - cdf(dist, dis_comps[i,4]) for i=1:ndims)
     if p_low < 0.0 && p_low > -1e-10
         p_low = 0.0
     end
 
-    p_high = (cdf(dist, dis_comps[1,1]) - cdf(dist, dis_comps[1,2]))*(cdf(dist, dis_comps[2,1]) - cdf(dist, dis_comps[2,2]))
+    p_high = prod(cdf(dist, dis_comps[i,1]) - cdf(dist, dis_comps[i,2]) for i=1:ndims)
     if p_high < 0.0 && p_high > -1e-10
         p_high = 0.0
     end
@@ -173,6 +238,13 @@ function calculate_transition_probabilities(explicit_states, all_images, compact
     Plow[end,end] = 1.0
     Phigh[end, end] = 1.0
     next!(progress_meter)
+
+    for row in eachrow(Plow)
+        @assert sum(row) <= 1.0
+    end
+    for row in eachrow(Phigh)
+        @assert sum(Phigh) >= 1.0
+    end
     return Plow, Phigh
 end
 

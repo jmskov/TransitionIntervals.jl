@@ -15,37 +15,37 @@ using Distributions
     state = [0.0 1.0]
     image = [1.2 1.3]
     res = (-0.2, -1.3, -0.3, -1.2)
-    dis = Stochascape.find_distances(image, state)
+    dis = Stochascape.additive_noise_distances(image, state)
     @test all([dis[i]≈res[i] for i=1:4])
 
     # image greater than, intersection
     image = [0.9 1.1]
     res = (0.1, -1.1, -0.1, -0.9)
-    dis = Stochascape.find_distances(image, state)
+    dis = Stochascape.additive_noise_distances(image, state)
     @test all([dis[i]≈res[i] for i=1:4])
 
     # image contained
     image = [0.5 0.6]
     res = (0.5, -0.6, 0.4, -0.5)
-    dis = Stochascape.find_distances(image, state)
+    dis = Stochascape.additive_noise_distances(image, state)
     @test all([dis[i]≈res[i] for i=1:4])
 
     # image less than, intersection
     image = [-0.1 0.1]
     res = (1.1, -0.1, 0.9, 0.1)
-    dis = Stochascape.find_distances(image, state)
+    dis = Stochascape.additive_noise_distances(image, state)
     @test all([dis[i]≈res[i] for i=1:4]) 
 
     # image less than, no intersection
     image = [-1.1 -0.9]
     res = (2.1, 0.9, 1.9, 1.1)
-    dis = Stochascape.find_distances(image, state)
+    dis = Stochascape.additive_noise_distances(image, state)
     @test all([dis[i]≈res[i] for i=1:4]) 
 
     # image larger than state
     image = [-0.1, 1.1]
     res = [1.1, -1.1, 0, 0]
-    dis = Stochascape.find_distances(image, state)
+    dis = Stochascape.additive_noise_distances(image, state)
     @test all([dis[i]≈res[i] for i=1:4]) 
 
     # symmetry test
@@ -82,4 +82,31 @@ using Distributions
     ver_p2 = sum(p_true2 .* succ_res2)  
 
     @test ver_p1 ≈ ver_p2
+
+    # test out the multiplicative nosie 
+    Stochascape.MULTIPLICATIVE_NOISE_FLAG = true
+
+    # both positive
+    A, B = [-1.0, 1.0] 
+    C, D = [0.5, 1.5]
+    expected_result = [B/C, A/D, B/D, A/C]
+    @test all(Stochascape.multiplicative_noise_distances([C, D], [A, B]) .≈ expected_result)
+    test_dist = Uniform(0.5, 1.5)
+    @info plow, phigh = Stochascape.simple_transition_bounds([C D], [A B], test_dist)
+
+    # C < 0
+    C, D = [-0.5, 0.4]
+    expected_result = [Inf, 0, A/C, 0]
+    @test all(Stochascape.multiplicative_noise_distances([C, D], [A, B]) .≈ expected_result)
+    test_dist = Uniform(1.0, 3.0)
+    @info plow, phigh = Stochascape.simple_transition_bounds([C D], [A B], test_dist)
+
+    # C < 0 and A > 0
+    # both positive
+    A, B = [0.0, 1.0] 
+    C, D = [-0.5, 0.4]
+    expected_result = [Inf, 0, 0, 0]
+    @test all(Stochascape.multiplicative_noise_distances([C, D], [A, B]) .≈ expected_result)
+    test_dist = Uniform(1.0, 3.0)
+    @info plow, phigh = Stochascape.simple_transition_bounds([C D], [A B], test_dist)
 end
