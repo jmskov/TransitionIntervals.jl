@@ -181,14 +181,13 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     progress_meter = Progress(length(keys(unrefined_states_to_recomp)), "Calculating refined transitions from unrefined states...", dt=STATUS_BAR_PERIOD)
     thread_lock = ReentrantLock()
 
-    # for (unrefined_state_index, target_set) in unrefined_states_to_recomp
     dict_keys = collect(keys(unrefined_states_to_recomp))
     Threads.@threads for idx=1:length(dict_keys) 
         next!(progress_meter)
         unrefined_state_index = dict_keys[idx]
         target_set = unrefined_states_to_recomp[unrefined_state_index]
         new_index = get_refined_index(unrefined_state_index, states_to_refine)
-        # Threads.@threads for b in eachindex(target_set) #target_indeces in target_set
+
         for b in eachindex(target_set) #target_indeces in target_set
             target_indeces = target_set[b]
             original_target_index = reverse_index_dict[target_indeces]
@@ -200,24 +199,24 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
                     warn_count += 1
                 end
 
-                lock(thread_lock)
-                try
-                    Plow_new[new_index, target_indeces] .= 0  
-                    Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
-                finally
-                    unlock(thread_lock)
-                end
+                # lock(thread_lock)
+                # try
+                @views Plow_new[new_index, target_indeces] .= 0  
+                @views Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
+                # finally
+                    # unlock(thread_lock)
+                # end
             else
                 for target_idx in target_indeces
                     # ! todo: handle the zero image case...
                     p_low, p_high = simple_transition_bounds(state_images[new_index], explicit_states[target_idx], noise_distribution)
-                    lock(thread_lock)
-                    try
-                        Plow_new[new_index, target_idx] = p_low
-                        Phigh_new[new_index, target_idx] = p_high
-                    finally
-                        unlock(thread_lock)
-                    end
+                    # lock(thread_lock)
+                    # try
+                        @views Plow_new[new_index, target_idx] = p_low
+                        @views Phigh_new[new_index, target_idx] = p_high
+                    # finally
+                        # unlock(thread_lock)
+                    # end
                 end
             end
         end
@@ -229,28 +228,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     Threads.@threads for i in num_unrefined_states+1:n_states_new-1
         # states to recompute
         target_idxs = refined_states_to_recomp[i]
-        # Threads.@threads for b in eachindex(target_idxs)
-        for b in eachindex(target_idxs)
-            j = target_idxs[b]
-            next!(progress_meter)
-            p_low, p_high = simple_transition_bounds(state_images[i], explicit_states[j], noise_distribution)
-            lock(thread_lock)
-            try
-                Plow_new[i,j] = p_low
-                Phigh_new[i,j] = p_high
-            finally
-                unlock(thread_lock)
-            end
-        end
-        next!(progress_meter)
-        p_low, p_high = simple_transition_bounds(state_images[i], compact_state, noise_distribution)
-        lock(thread_lock)
-        try 
-            Plow_new[i,end] = 1 - p_high
-            Phigh_new[i,end] = 1 - p_low
-        finally
-            unlock(thread_lock)
-        end
+        @views process_row!(Plow_new[i,:], Phigh_new[i,:], explicit_states, state_images[i], compact_state, target_idxs, noise_distribution)
     end 
 
     # Verify the transition matrices
@@ -262,4 +240,18 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     end
 
     return Plow_new, Phigh_new
+end
+
+function process_row!(plow_row, phigh_row, states, image, compact_state, targets, noise_distribution)
+    for b in eachindex(targets)
+        j = targets[b]
+        # next!(progress_meter)
+        p_low, p_high = simple_transition_bounds(image, states[j], noise_distribution)
+        plow_row[j] = p_low
+        phigh_row[j] = p_high
+    end
+    p_low, p_high = simple_transition_bounds(image, compact_state, noise_distribution)
+    plow_row[end] = 1 - p_high
+    # ! why tf does this error out?
+    phigh_row[end] = 1 - p_low 
 end
