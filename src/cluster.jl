@@ -123,6 +123,11 @@ function calculate_implicit_p(P̌_row, P̂_row, image, states, prior_results::Ab
     p_true_upper = true_transition_probabilities(all_P̌, all_P̂, idx_perm_upper)
     p̂_new = sum(p_true_upper .* all_succ_res_upper)
 
+    # check for numerical accuracy
+    if p̂_new > 1 && p̂_new - 1 < 1e-8
+        p̂_new = 1
+    end
+
     @assert p̌_new ≤ 1.0
     @assert sum(all_P̌) ≤ 1.0
     @assert sum(all_P̂) ≥ 1.0
@@ -132,7 +137,6 @@ function calculate_implicit_p(P̌_row, P̂_row, image, states, prior_results::Ab
     for i in eachindex(p_true)
         @assert all_P̌[i] ≤ p_true[i] ≤ all_P̂[i]
     end
-
 
     if log_flag
         @info "p̌_cluster: ", p̌_cluster
