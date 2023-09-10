@@ -53,7 +53,7 @@ function uniform_refinement(state)
     return new_states
 end
 
-function refine_states!(explicit_states, states_to_refine; min_size=0.001)
+function refine_states!(explicit_states, states_to_refine; min_size=MIN_REFINE_SIZE)
     new_states = []
     state_map_dict = Dict()
     new_state_idx = length(explicit_states) - length(states_to_refine) + 1
@@ -70,7 +70,7 @@ function refine_states!(explicit_states, states_to_refine; min_size=0.001)
     end
 
     if length(states_skipped) > 0
-        states_to_refine = setdiff(states_to_refine, states_skipped)
+        setdiff!(states_to_refine, states_skipped)
         @warn "Skipped $(length(states_skipped)) states because they were too small."
     end
 
@@ -165,25 +165,31 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
         reverse_index_dict[value] = key
     end
 
-    # Resue the old transitions between unrefined states
-    Plow_new[1:num_unrefined_states, 1:num_unrefined_states] = Plow[unrefined_states, unrefined_states]
-    Phigh_new[1:num_unrefined_states, 1:num_unrefined_states] = Phigh[unrefined_states, unrefined_states]
-    for (i, unrefined_state_index) in enumerate(unrefined_states)
-        Plow_new[i, end] = Plow[unrefined_state_index, end]
-        Phigh_new[i, end] = Phigh[unrefined_state_index, end]
-    end
-    Plow_new[end,end] = 1.0 
-    Phigh_new[end,end] = 1.0
+    # Recompute the transitions between all new refined states with the old unrefined states
 
-    warn_count = 0
+    P_low_buffers = [spzeros(n_states_new, n_states_new) for i=1:Threads.nthreads()]
+    P_high_buffers = [spzeros(n_states_new, n_states_new) for i=1:Threads.nthreads()]
+
+    p_vectors = [zeros(2) for i=1:Threads.nthreads()]
+    distance_buffers = [zeros(size(explicit_states[1],1), 4) for i=1:Threads.nthreads()]
+
+    progress_meter = Progress(num_new_state_transitions, "Calculating refined transitions from refined states...", dt=STATUS_BAR_PERIOD)
+    Threads.@threads for i in num_unrefined_states+1:n_states_new-1
+    # for i in num_unrefined_states+1:n_states_new-1 
+        # states to recompute
+        target_idxs = refined_states_to_recomp[i]
+        @views process_row!(P_low_buffers[Threads.threadid()][i,:], P_high_buffers[Threads.threadid()][i,:], explicit_states, state_images[i], compact_state, target_idxs, noise_distribution, p_vectors[Threads.threadid()], distance_buffers[Threads.threadid()])
+    end 
 
     # Now, recompute the transitions between old unrefined states and new refined states
     progress_meter = Progress(length(keys(unrefined_states_to_recomp)), "Calculating refined transitions from unrefined states...", dt=STATUS_BAR_PERIOD)
     thread_lock = ReentrantLock()
 
+    warn_count = 0
+
     dict_keys = collect(keys(unrefined_states_to_recomp))
     Threads.@threads for idx=1:length(dict_keys) 
-        next!(progress_meter)
+        # next!(progress_meter)
         unrefined_state_index = dict_keys[idx]
         target_set = unrefined_states_to_recomp[unrefined_state_index]
         new_index = get_refined_index(unrefined_state_index, states_to_refine)
@@ -199,37 +205,31 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
                     warn_count += 1
                 end
 
-                # lock(thread_lock)
-                # try
-                @views Plow_new[new_index, target_indeces] .= 0  
-                @views Phigh_new[new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
-                # finally
-                    # unlock(thread_lock)
-                # end
+                @views P_low_buffers[Threads.threadid()][new_index, target_indeces] .= 0  
+                @views P_high_buffers[Threads.threadid()][new_index, target_indeces] .= Phigh[unrefined_state_index, original_target_index]
             else
                 for target_idx in target_indeces
                     # ! todo: handle the zero image case...
-                    p_low, p_high = simple_transition_bounds(state_images[new_index], explicit_states[target_idx], noise_distribution)
-                    # lock(thread_lock)
-                    # try
-                        @views Plow_new[new_index, target_idx] = p_low
-                        @views Phigh_new[new_index, target_idx] = p_high
-                    # finally
-                        # unlock(thread_lock)
-                    # end
+                    simple_transition_bounds(state_images[new_index], explicit_states[target_idx], noise_distribution, p_buffer=p_vectors[Threads.threadid()], distance_buffer=distance_buffers[Threads.threadid()])
+                        @views P_low_buffers[Threads.threadid()][new_index, target_idx] = p_vectors[Threads.threadid()][1]
+                        @views P_high_buffers[Threads.threadid()][new_index, target_idx] = p_vectors[Threads.threadid()][2]
                 end
             end
         end
     end
 
-    # Now, recompute the transitions between all new refined states with the old unrefined states
+    Plow_new = sum(P_low_buffers)
+    Phigh_new = sum(P_high_buffers)
 
-    progress_meter = Progress(num_new_state_transitions, "Calculating refined transitions from refined states...", dt=STATUS_BAR_PERIOD)
-    Threads.@threads for i in num_unrefined_states+1:n_states_new-1
-        # states to recompute
-        target_idxs = refined_states_to_recomp[i]
-        @views process_row!(Plow_new[i,:], Phigh_new[i,:], explicit_states, state_images[i], compact_state, target_idxs, noise_distribution)
-    end 
+    # Resue the old transitions between unrefined states
+    Plow_new[1:num_unrefined_states, 1:num_unrefined_states] = Plow[unrefined_states, unrefined_states]
+    Phigh_new[1:num_unrefined_states, 1:num_unrefined_states] = Phigh[unrefined_states, unrefined_states]
+    for (i, unrefined_state_index) in enumerate(unrefined_states)
+        Plow_new[i, end] = Plow[unrefined_state_index, end]
+        Phigh_new[i, end] = Phigh[unrefined_state_index, end]
+    end
+    Plow_new[end,end] = 1.0 
+    Phigh_new[end,end] = 1.0
 
     # Verify the transition matrices
     for row in eachrow(Plow_new)
@@ -242,16 +242,15 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     return Plow_new, Phigh_new
 end
 
-function process_row!(plow_row, phigh_row, states, image, compact_state, targets, noise_distribution)
+function process_row!(plow_row, phigh_row, states, image, compact_state, targets, noise_distribution, p_vector, distance_buffer)
     for b in eachindex(targets)
         j = targets[b]
         # next!(progress_meter)
-        p_low, p_high = simple_transition_bounds(image, states[j], noise_distribution)
-        plow_row[j] = p_low
-        phigh_row[j] = p_high
+        simple_transition_bounds(image, states[j], noise_distribution, p_buffer=p_vector, distance_buffer=distance_buffer)
+        plow_row[j] = p_vector[1]
+        phigh_row[j] = p_vector[2]
     end
-    p_low, p_high = simple_transition_bounds(image, compact_state, noise_distribution)
-    plow_row[end] = 1 - p_high
-    # ! why tf does this error out?
-    phigh_row[end] = 1 - p_low 
+    simple_transition_bounds(image, compact_state, noise_distribution, p_buffer=p_vector, distance_buffer=distance_buffer)
+    plow_row[end] = 1 - p_vector[2]
+    phigh_row[end] = 1 - p_vector[1] 
 end

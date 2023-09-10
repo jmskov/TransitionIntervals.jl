@@ -168,7 +168,7 @@ function multiplicative_noise_distances(image, target)
 end
 
 # this is all I need now for transition bounds... for now
-function simple_transition_bounds(image, state, dist)
+function simple_transition_bounds(image, state, dist; p_buffer=nothing, distance_buffer=nothing)
     if MULTIPLICATIVE_NOISE_FLAG
         distances_function = multiplicative_noise_distances
     else
@@ -176,7 +176,7 @@ function simple_transition_bounds(image, state, dist)
     end
 
     ndims = size(image,1)
-    dis_comps = zeros(ndims, 4)
+    dis_comps = isnothing(distance_buffer) ? zeros(ndims, 4) : distance_buffer
     [dis_comps[i,:] .= distances_function([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
 
     p_low = prod(cdf(dist, dis_comps[i,3]) - cdf(dist, dis_comps[i,4]) for i=1:ndims)
@@ -200,7 +200,12 @@ function simple_transition_bounds(image, state, dist)
             @assert p_high <= 1+1e-10
         end
     end
-    return p_low, p_high
+
+    p_vector = isnothing(p_buffer) ? zeros(ndims) : p_buffer
+    p_vector[1] = p_low
+    p_vector[2] = p_high
+
+    return p_vector
 end
 
 function initialize_transition_matrices(nstates)
@@ -219,19 +224,21 @@ function calculate_transition_probabilities(explicit_states, all_images, compact
 
     n_transitions = size(Plow,1)^2
     progress_meter = Progress(n_transitions, "Computing state images...", dt=STATUS_BAR_PERIOD)
+    p_vector = zeros(2)
+    distance_buffer = zeros(size(explicit_states[1],1), 4)
 
     for (i, image) in enumerate(all_images)
         for (j, state) in enumerate(explicit_states)
-            p_low, p_high = simple_transition_bounds(image, state, noise_distribution)
-            Plow[i,j] = p_low
-            Phigh[i,j] = p_high
+            p_vector = simple_transition_bounds(image, state, noise_distribution, p_buffer=p_vector, distance_buffer=distance_buffer)
+            Plow[i,j] = p_vector[1]
+            Phigh[i,j] = p_vector[2]
             next!(progress_meter)
         end
     
         # to the bad state
-        p_low, p_high = simple_transition_bounds(image, compact_state, noise_distribution)
-        Plow[i,end] = 1 - p_high
-        Phigh[i,end] = 1 - p_low
+        p_vector = simple_transition_bounds(image, compact_state, noise_distribution, p_buffer=p_vector, distance_buffer=distance_buffer)
+        Plow[i,end] = 1 - p_vector[2]
+        Phigh[i,end] = 1 - p_vector[1]
         next!(progress_meter)
     end
 
