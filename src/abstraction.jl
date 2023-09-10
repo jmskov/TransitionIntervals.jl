@@ -47,7 +47,11 @@ function calculate_all_images(explicit_states, user_defined_map)
     images = Array{Array{Float64,2},1}(undef, length(explicit_states))
 
     Threads.@threads for i in eachindex(explicit_states)
-        images[i] = user_defined_map(explicit_states[i]) 
+        try
+            images[i] = user_defined_map(explicit_states[i], thread_idx=Threads.threadid()) 
+        catch 
+            images[i] = user_defined_map(explicit_states[i]) 
+        end 
         next!(progress_meter)
     end
     return images
