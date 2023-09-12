@@ -55,8 +55,8 @@ function true_transition_probabilities(pmin::AbstractVector, pmax::AbstractVecto
 
     @assert length(pmin) == length(pmax) == length(indeces)
 
-    p = zeros(size(pmin))
-    used = sum(pmin)
+    p = zeros(size(indeces))
+    used = sum(pmin[indeces])
     remain = 1 - used
 
     for i in indeces
@@ -67,6 +67,13 @@ function true_transition_probabilities(pmin::AbstractVector, pmax::AbstractVecto
         end
         remain = max(0, remain - (pmax[i] - pmin[i]))
     end
+
+    if !(sum(p)≈1)
+        @info remain
+        @info pmin
+        @info pmax
+    end
+    @assert sum(p) ≈ 1
 
     return p
 end
@@ -117,10 +124,6 @@ function calculate_implicit_p(P̌_row, P̂_row, image, states, prior_results::Ab
     p̂_new = sum(p_true_upper .* all_succ_res_upper)
 
     @assert p̌_new ≤ 1.0
-    @assert sum(p_true) ≈ 1
-    @assert sum(p_true_upper) ≈ 1
-
-
     @assert sum(all_P̌) ≤ 1.0
     @assert sum(all_P̂) ≥ 1.0
     @assert p̂_new ≤ 1.0

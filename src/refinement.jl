@@ -43,7 +43,7 @@ function find_states_to_refine(result_matrix, threshold, Phigh)
 
     states_to_keep = setdiff(1:size(Phigh,1)-1, states_to_refine)
 
-    return unique(sort!(states_to_refine)), states_to_keep
+    return unique(sort(states_to_refine)), states_to_keep
 end
 
 function uniform_refinement(state)
@@ -103,11 +103,11 @@ end
 function refine_transitions(explicit_states, state_index_dict, state_images, states_to_refine, Plow, Phigh, compact_state, noise_distribution)
     n_states_new = length(explicit_states) + 1 # add one for the sink state
     n_states_old = size(Plow,2)
-    unrefined_states = sort(setdiff(1:n_states_old-1, states_to_refine))
+    unrefined_states = setdiff(1:n_states_old-1, states_to_refine)
     num_unrefined_states = length(unrefined_states)
     
-    Plow_new = spzeros(n_states_new, n_states_new)
-    Phigh_new = spzeros(n_states_new, n_states_new)
+    # Plow_new = spzeros(n_states_new, n_states_new)
+    # Phigh_new = spzeros(n_states_new, n_states_new)
 
     # Get the successor states of the unrefined images 
     unrefined_states_to_recomp = Dict()
@@ -126,7 +126,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
         end
 
         if !isempty(target_idxs)
-            unrefined_states_to_recomp[unrefined_state_index] = sort(unique(target_idxs))
+            unrefined_states_to_recomp[unrefined_state_index] = unique(target_idxs)
             num_old_state_transitions += length(unrefined_states_to_recomp[unrefined_state_index])
         end
     end
@@ -154,7 +154,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
         new_indeces = state_index_dict[old_idx]
         for idx in new_indeces
             @assert idx ∉ keys(refined_states_to_recomp)
-            refined_states_to_recomp[idx] = sort(unique(target_idxs))
+            refined_states_to_recomp[idx] = unique(target_idxs)
             num_new_state_transitions += length(refined_states_to_recomp[idx]) + 1 # one for the sink state!
         end
     end
@@ -167,11 +167,12 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
     # Recompute the transitions between all new refined states with the old unrefined states
 
-    P_low_buffers = [spzeros(n_states_new, n_states_new) for i=1:Threads.nthreads()]
-    P_high_buffers = [spzeros(n_states_new, n_states_new) for i=1:Threads.nthreads()]
+    nthreads = Threads.nthreads()
+    P_low_buffers = [spzeros(n_states_new, n_states_new) for i=1:nthreads]
+    P_high_buffers = [spzeros(n_states_new, n_states_new) for i=1:nthreads]
 
-    p_vectors = [zeros(2) for i=1:Threads.nthreads()]
-    distance_buffers = [zeros(size(explicit_states[1],1), 4) for i=1:Threads.nthreads()]
+    p_vectors = [zeros(2) for i=1:nthreads]
+    distance_buffers = [zeros(size(explicit_states[1],1), 4) for i=1:nthreads]
 
     progress_meter = Progress(num_new_state_transitions, "Calculating refined transitions from refined states...", dt=STATUS_BAR_PERIOD)
     Threads.@threads for i in num_unrefined_states+1:n_states_new-1
@@ -183,12 +184,12 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
     # Now, recompute the transitions between old unrefined states and new refined states
     progress_meter = Progress(length(keys(unrefined_states_to_recomp)), "Calculating refined transitions from unrefined states...", dt=STATUS_BAR_PERIOD)
-    thread_lock = ReentrantLock()
 
     warn_count = 0
 
     dict_keys = collect(keys(unrefined_states_to_recomp))
     Threads.@threads for idx=1:length(dict_keys) 
+    # for idx=1:length(dict_keys) 
         # next!(progress_meter)
         unrefined_state_index = dict_keys[idx]
         target_set = unrefined_states_to_recomp[unrefined_state_index]
@@ -222,11 +223,19 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     Phigh_new = sum(P_high_buffers)
 
     # Resue the old transitions between unrefined states
-    Plow_new[1:num_unrefined_states, 1:num_unrefined_states] = Plow[unrefined_states, unrefined_states]
-    Phigh_new[1:num_unrefined_states, 1:num_unrefined_states] = Phigh[unrefined_states, unrefined_states]
-    for (i, unrefined_state_index) in enumerate(unrefined_states)
+    # Plow_new[1:num_unrefined_states, 1:num_unrefined_states] = Plow[unrefined_states, unrefined_states]
+    # Phigh_new[1:num_unrefined_states, 1:num_unrefined_states] = Phigh[unrefined_states, unrefined_states]
+    i = 1
+    for unrefined_state_index in unrefined_states
+        j = 1
+        for target_unrefined_idx in unrefined_states 
+            Plow_new[i, j] = Plow[unrefined_state_index, target_unrefined_idx]
+            Phigh_new[i, j] = Phigh[unrefined_state_index, target_unrefined_idx] 
+            j += 1
+        end
         Plow_new[i, end] = Plow[unrefined_state_index, end]
         Phigh_new[i, end] = Phigh[unrefined_state_index, end]
+        i += 1
     end
     Plow_new[end,end] = 1.0 
     Phigh_new[end,end] = 1.0

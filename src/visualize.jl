@@ -32,6 +32,9 @@ function plot_with_classifications!(plt, states, classifications)
     colors[classifications .== 1] .= sat_color
     colors[classifications .== 2] .= unsat_color
     plot!(plt, create_shape.(states), fillcolor=permutedims(colors), fillalpha=1.0, linewidth=0.0, label="")
+    colors[classifications .== 1] .= :green
+    colors[classifications .== 2] .= :red
+    plot!(plt, create_shape.(states), fillcolor=permutedims(colors), fillalpha=fillalpha, linewidth=0.0, label="")
 end
 
 function plot_state_labels!(plt, states)
@@ -64,6 +67,7 @@ function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xl
     classifications = classify_results(results_matrix, threshold)
     plt = plot(aspect_ratio=1, dpi=300, xlims=xlims, ylims=ylims)
     plot_with_classifications!(plt, states, classifications)
+    # plot_state_labels!(plt, states)
     if !isnothing(state_labels)
         plot_labelled_states_outline!(plt, state_labels)
     end
