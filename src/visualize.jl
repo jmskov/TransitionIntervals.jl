@@ -22,7 +22,7 @@ function plot_with_classifications(states, classifications)
     return plt
 end
 
-function plot_with_classifications!(plt, states, classifications)
+function plot_with_classifications!(plt, states, classifications; fillalpha=1.0)
     indet_color = colorant"#D6FAFF"
     sat_color = colorant"#00AFF5"
     unsat_color = colorant"#D55672"
@@ -31,9 +31,6 @@ function plot_with_classifications!(plt, states, classifications)
     # change the colors of the states that are classified
     colors[classifications .== 1] .= sat_color
     colors[classifications .== 2] .= unsat_color
-    plot!(plt, create_shape.(states), fillcolor=permutedims(colors), fillalpha=1.0, linewidth=0.0, label="")
-    colors[classifications .== 1] .= :green
-    colors[classifications .== 2] .= :red
     plot!(plt, create_shape.(states), fillcolor=permutedims(colors), fillalpha=fillalpha, linewidth=0.0, label="")
 end
 
