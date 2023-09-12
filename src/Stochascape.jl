@@ -11,6 +11,7 @@ global MIN_REFINE_SIZE = 0.001
 global MULTIPLICATIVE_NOISE_FLAG = false
 
 using Plots
+using Colors
 
 # Write your package code here.
 include("abstraction.jl")
