@@ -182,11 +182,25 @@ function simple_transition_bounds(image, state, dist; p_buffer=nothing, distance
     ndims = size(image,1)
 
     dis_comps = isnothing(distance_buffer) ? zeros(ndims, 4) : distance_buffer
+    [dis_comps[i,:] .= distances_function([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
     if USE_STATIC_PARTITIONS
-        dis_comps[:,1] .= STATIC_PARTITION_BOUNDS[1]
-        dis_comps[:,2] .= STATIC_PARTITION_BOUNDS[2]
+        if !(all(STATIC_PARTITION_BOUNDS[1] .>= dis_comps[:,4]) && all(STATIC_PARTITION_BOUNDS[2] .<= dis_comps[:,3]))
+            dis_comps[:,4] .= 0 
+            dis_comps[:,3] .= 0
+        else
+            dis_comps[:,4] .= STATIC_PARTITION_BOUNDS[1]
+            dis_comps[:,3] .= STATIC_PARTITION_BOUNDS[2]
+        end
+
+        if all(STATIC_PARTITION_BOUNDS[1] .<= dis_comps[:,2]) && all(STATIC_PARTITION_BOUNDS[2] .>= dis_comps[:,1])
+            dis_comps[:,2] .= STATIC_PARTITION_BOUNDS[1]
+            dis_comps[:,1] .= STATIC_PARTITION_BOUNDS[2]
+        else
+            dis_comps[:,2] .= -Inf
+            dis_comps[:,1] .= Inf
+        end
     else
-        [dis_comps[i,:] .= distances_function([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
+        
     end
 
     p_low = prod(cdf(dist, dis_comps[i,3]) - cdf(dist, dis_comps[i,4]) for i=1:ndims)
