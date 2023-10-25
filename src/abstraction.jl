@@ -180,8 +180,14 @@ function simple_transition_bounds(image, state, dist; p_buffer=nothing, distance
     end
 
     ndims = size(image,1)
+
     dis_comps = isnothing(distance_buffer) ? zeros(ndims, 4) : distance_buffer
-    [dis_comps[i,:] .= distances_function([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
+    if USE_STATIC_PARTITIONS
+        dis_comps[:,1] .= STATIC_PARTITION_BOUNDS[1]
+        dis_comps[:,2] .= STATIC_PARTITION_BOUNDS[2]
+    else
+        [dis_comps[i,:] .= distances_function([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
+    end
 
     p_low = prod(cdf(dist, dis_comps[i,3]) - cdf(dist, dis_comps[i,4]) for i=1:ndims)
     if p_low < 0.0 && p_low > -1e-10
@@ -205,7 +211,7 @@ function simple_transition_bounds(image, state, dist; p_buffer=nothing, distance
         end
     end
 
-    p_vector = isnothing(p_buffer) ? zeros(ndims) : p_buffer
+    p_vector = isnothing(p_buffer) ? zeros(2) : p_buffer
     p_vector[1] = p_low
     p_vector[2] = p_high
 

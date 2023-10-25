@@ -109,4 +109,13 @@ using Distributions
     @test all(Stochascape.multiplicative_noise_distances([C, D], [A, B]) .≈ expected_result)
     test_dist = Uniform(1.0, 3.0)
     @info plow, phigh = Stochascape.simple_transition_bounds([C D], [A B], test_dist)
+
+    # test static partition bounds
+    res_dyn = Stochascape.simple_transition_bounds(image1, state1, dist)
+
+    # test static partition bounds
+    Stochascape.USE_STATIC_PARTITIONS = true
+    Stochascape.STATIC_PARTITION_BOUNDS = [-0.2, 0.2]
+    res_sta = Stochascape.simple_transition_bounds(image1, state1, dist)
+    @test res_sta[2] > res_dyn[2]
 end
