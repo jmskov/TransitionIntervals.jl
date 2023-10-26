@@ -70,6 +70,7 @@ function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xl
     end
     figure_filename = "$results_dir/sat-classification"
     save_figure_files(plt, figure_filename)
+    return plt
 end
 
 function plot_labelled_states_outline!(plt, state_label_dict; color=:black, fontsize=16)

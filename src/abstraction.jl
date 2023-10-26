@@ -247,7 +247,7 @@ function calculate_transition_probabilities(explicit_states, all_images, compact
     Plow, Phigh = initialize_transition_matrices(nstates)
 
     n_transitions = size(Plow,1)^2
-    progress_meter = Progress(n_transitions, "Computing state images...", dt=STATUS_BAR_PERIOD)
+    progress_meter = Progress(n_transitions, "Computing transition intervals...", dt=STATUS_BAR_PERIOD)
     p_vector = zeros(2)
     distance_buffer = zeros(size(explicit_states[1],1), 4)
 
