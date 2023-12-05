@@ -46,7 +46,7 @@ function save_figure_files(plt, filename)
     serialize(filename * ".plt", plt)
 end
 
-function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xlims=:none, ylims=:none, state_labels=nothing)
+function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xlims=:none, ylims=:none, state_labels=nothing, datapoints_x=nothing)
     figure_filename = "$results_dir/sat-lower-bound"
     plt = plot(aspect_ratio=1, dpi=300, xlims=xlims, ylims=ylims)
     plot_with_alpha!(plt, states, results_matrix[:,3])
@@ -70,6 +70,12 @@ function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xl
     end
     figure_filename = "$results_dir/sat-classification"
     save_figure_files(plt, figure_filename)
+    if !isnothing(datapoints_x)
+        # plot the pairs of points in datapoints_x as a scatter with no label
+        scatter!(plt, datapoints_x[1,:], datapoints_x[2,:], label="", color=:black, markersize=2.0)
+        figure_filename = "$results_dir/sat-classification_data"
+        save_figure_files(plt, figure_filename)
+    end
     return plt
 end
 
