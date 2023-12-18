@@ -89,7 +89,7 @@ function calculate_implicit_p(P̌_row, P̂_row, image, states, prior_results::Ab
     # numerical? 
     intersecting_state_idxs = find_intersecting_states(image, states) 
     cluster_state = build_super_state(states[intersecting_state_idxs])
-    p_low_new, p_high_new = simple_transition_bounds(image, cluster_state, noise_distribution)
+    p_low_new, p_high_new = simple_transition_interval(image, cluster_state, noise_distribution)
 
     # Find all the states in Q^* 
     all_succ_states_star = setdiff(findall(x->x>0, P̂_row), intersecting_state_idxs)

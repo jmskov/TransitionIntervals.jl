@@ -1,6 +1,7 @@
 module Stochascape
 
 using Distributions
+import Distributions.cdf
 using SparseArrays
 using Serialization 
 
@@ -18,9 +19,11 @@ using Colors
 
 # Write your package code here.
 include("abstraction.jl")
+include("transitions.jl")
 include("refinement.jl")
 include("merging.jl")
 include("cluster.jl")
+include("utilities.jl")
 include("visualize.jl")
 
 end

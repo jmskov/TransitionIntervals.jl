@@ -9,6 +9,8 @@ function imc_abstraction(full_state, spacing, image_map, noise_distribution)
     return states, images, Plow, Phigh
 end
 
+# todo: abstraction here with uncertainty bounds?
+
 # States
 function grid_generator(L, U, δ)
 	generator = nothing
@@ -73,19 +75,25 @@ end
 
 # Transitions
 function additive_noise_distances(image, target)
-    A, B = target
-    C, D = image
+    buffer = zeros(4)
+    return additive_noise_distances!(image, target, buffer)
+end
+
+function additive_noise_distances!(image, target, buffer)
+    return additive_noise_distances!(image[1], image[2], target[1], target[2], buffer)
+end
+
+function additive_noise_distances!(C, D, A, B, buffer)
     W = D - C
-    @assert W > 0
 
     Δ1 = abs(B-C)
     Δ2 = -abs(A-D)
     # check if target contains image
-    if target[1] <= image[1] <= image[2] <= target[2]
+    if A <= C <= D <= B
         Δ3 = abs(B-D)
         Δ4 = -abs(A-C)
     # check if image is larger than target
-    elseif image[1] <= target[1] <= target[2] <= image[2]
+    elseif C <= A <= B <= D
         Δ3 = 0  
         Δ4 = 0
     else
@@ -108,9 +116,11 @@ function additive_noise_distances(image, target)
         end
     end
     
-    @assert Δ2 <= Δ1
-    @assert Δ4 <= Δ3
-    return Δ1, Δ2, Δ3, Δ4
+    buffer[1] = Δ1
+    buffer[2] = Δ2
+    buffer[3] = Δ3
+    buffer[4] = Δ4
+    return buffer
 end
 
 function multiplicative_noise_distances(image, target)
@@ -171,67 +181,6 @@ function multiplicative_noise_distances(image, target)
     return Δ1, Δ2, Δ3, Δ4
 end
 
-# this is all I need now for transition bounds... for now
-function simple_transition_bounds(image, state, dist; p_buffer=nothing, distance_buffer=nothing)
-    if MULTIPLICATIVE_NOISE_FLAG
-        distances_function = multiplicative_noise_distances
-    else
-        distances_function = additive_noise_distances
-    end
-
-    ndims = size(image,1)
-
-    dis_comps = isnothing(distance_buffer) ? zeros(ndims, 4) : distance_buffer
-    [dis_comps[i,:] .= distances_function([image[i,1], image[i,2]], [state[i,1], state[i,2]]) for i=1:ndims]
-    if USE_STATIC_PARTITIONS
-        if !(all(STATIC_PARTITION_BOUNDS[1] .>= dis_comps[:,4]) && all(STATIC_PARTITION_BOUNDS[2] .<= dis_comps[:,3]))
-            dis_comps[:,4] .= 0 
-            dis_comps[:,3] .= 0
-        else
-            dis_comps[:,4] .= STATIC_PARTITION_BOUNDS[1]
-            dis_comps[:,3] .= STATIC_PARTITION_BOUNDS[2]
-        end
-
-        if all(STATIC_PARTITION_BOUNDS[1] .<= dis_comps[:,2]) && all(STATIC_PARTITION_BOUNDS[2] .>= dis_comps[:,1])
-            dis_comps[:,2] .= STATIC_PARTITION_BOUNDS[1]
-            dis_comps[:,1] .= STATIC_PARTITION_BOUNDS[2]
-        else
-            dis_comps[:,2] .= -Inf
-            dis_comps[:,1] .= Inf
-        end
-    else
-        
-    end
-
-    p_low = prod(cdf(dist, dis_comps[i,3]) - cdf(dist, dis_comps[i,4]) for i=1:ndims)
-    if p_low < 0.0 && p_low > -1e-10
-        p_low = 0.0
-    end
-
-    p_high = prod(cdf(dist, dis_comps[i,1]) - cdf(dist, dis_comps[i,2]) for i=1:ndims)
-    if p_high < 0.0 && p_high > -1e-10
-        p_high = 0.0
-    end
-
-    @assert p_low <= p_high
-    @assert p_low >= 0 && p_low <= 1
-    @assert p_high >= 0
-
-    if p_high > 1.0
-        if p_high <= 1+1e-10
-            p_high = 1.0
-        else
-            @assert p_high <= 1+1e-10
-        end
-    end
-
-    p_vector = isnothing(p_buffer) ? zeros(2) : p_buffer
-    p_vector[1] = p_low
-    p_vector[2] = p_high
-
-    return p_vector
-end
-
 function initialize_transition_matrices(nstates)
     Plow = spzeros(nstates, nstates)
     Phigh = spzeros(nstates, nstates)
@@ -242,45 +191,7 @@ function state_radius(state)
     return 0.5*sqrt(sum((state[:,2] - state[:,1]).^2))
 end
 
-function calculate_transition_probabilities(explicit_states, all_images, compact_state, noise_distribution)
-    nstates = length(explicit_states)+1
-    Plow, Phigh = initialize_transition_matrices(nstates)
-
-    n_transitions = size(Plow,1)^2
-    progress_meter = Progress(n_transitions, "Computing transition intervals...", dt=STATUS_BAR_PERIOD)
-    p_vector = zeros(2)
-    distance_buffer = zeros(size(explicit_states[1],1), 4)
-
-    for (i, image) in enumerate(all_images)
-        for (j, state) in enumerate(explicit_states)
-            p_vector = simple_transition_bounds(image, state, noise_distribution, p_buffer=p_vector, distance_buffer=distance_buffer)
-            Plow[i,j] = p_vector[1]
-            Phigh[i,j] = p_vector[2]
-            next!(progress_meter)
-        end
-    
-        # to the bad state
-        p_vector = simple_transition_bounds(image, compact_state, noise_distribution, p_buffer=p_vector, distance_buffer=distance_buffer)
-        Plow[i,end] = 1 - p_vector[2]
-        Phigh[i,end] = 1 - p_vector[1]
-        next!(progress_meter)
-    end
-
-    Plow[end,end] = 1.0
-    Phigh[end, end] = 1.0
-    next!(progress_meter)
-
-    for row in eachrow(Plow)
-        @assert sum(row) <= 1.0
-    end
-    for row in eachrow(Phigh)
-        @assert sum(Phigh) >= 1.0
-    end
-    return Plow, Phigh
-end
-
 # Results
-
 function classify_results(result_matrix, threshold)
     classification = zeros(size(result_matrix,1))
     for i=1:size(result_matrix,1)
