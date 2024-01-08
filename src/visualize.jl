@@ -46,7 +46,7 @@ function save_figure_files(plt, filename)
     serialize(filename * ".plt", plt)
 end
 
-function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xlims=:none, ylims=:none, state_labels=nothing, datapoints_x=nothing)
+function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xlims=:none, ylims=:none, state_labels=nothing, datapoints_x=nothing, title="")
     figure_filename = "$results_dir/sat-lower-bound"
     plt = plot(aspect_ratio=1, dpi=300, xlims=xlims, ylims=ylims)
     plot_with_alpha!(plt, states, results_matrix[:,3])
@@ -62,7 +62,7 @@ function plot_all_results(results_dir, states, results_matrix; threshold=0.9, xl
     end
     save_figure_files(plt, figure_filename)
     classifications = classify_results(results_matrix, threshold)
-    plt = plot(aspect_ratio=1, dpi=300, xlims=xlims, ylims=ylims)
+    plt = plot(aspect_ratio=1, dpi=300, xlims=xlims, ylims=ylims, title=title)
     plot_with_classifications!(plt, states, classifications)
     # plot_state_labels!(plt, states)
     if !isnothing(state_labels)
