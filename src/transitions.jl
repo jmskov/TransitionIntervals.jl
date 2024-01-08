@@ -40,27 +40,20 @@ function calc_distances(image, state, buffer)
     return buffer
 end
 
-# TODO: I don't think I need this thing
-function add_to_col!(buffer, col, val)
+function buffer_distances!(distances, val)
     for i in axes(buffer,1)
         buffer[i,col] += val
     end
-    return buffer
+    check_distances!(distances)
+    return distances
 end
 
-function buffer_distances!(distances, ep)
-    # todo: keep this, ep may eventually be a vector?
-    add_to_col!(distances, 4, ep)
-    add_to_col!(distances, 3, -ep)
-    add_to_col!(distances, 1, ep)
-    add_to_col!(distances, 2, -ep)
-
+function check_distances!(distances)
     for i in axes(distances, 1)
         if distances[i,3] < distances[i,4]
             distances[i,3] = distances[i,4] = 0
         end
     end
-    return distances
 end
 
 #==
@@ -68,10 +61,9 @@ end
 
 This function calculates the optimal (minimum-width) transition intervals for an image and target state. It returns a vector of probabilities, where the first element is the lower-bound probability, and the second element is the upper-bound probability.
 ==#
-function optimal_transition_interval(image::Matrix{Float64}, state::Matrix{Float64}, w_dist::Distribution, p_buffer::Vector{Float64}=zeros(2), distance_buffer::Matrix{Float64}=zeros(length(image),4), v_dist::Distribution=Normal(0.0, 0.0))
+function optimal_transition_interval(image::Matrix{Float64}, state::Matrix{Float64}, w_dist::Distribution=Normal(0.0, 0.0), p_buffer::Vector{Float64}=zeros(2), distance_buffer::Matrix{Float64}=zeros(length(image),4), v_dist::Distribution=Normal(0.0, 0.0))
 
     # todo: update this method to handle static partitions
-    # todo: update this method to handle no noise
 
     # sweep method
     p_low_total = 1
@@ -185,15 +177,15 @@ function calculate_transition_probabilities(states::Vector{Matrix{Float64}}, ima
 
         for (j, state) in enumerate(states)
             p_vector = optimal_transition_interval(image, state, process_dist, p_buffer, distance_buffer, state_dep_dist)
-            Plow[i,j] = p_vector[1]
-            Phigh[i,j] = p_vector[2]
+            Plow[j,i] = p_vector[1]
+            Phigh[j,i] = p_vector[2]
             next!(progress_meter)
         end
     
         # to the bad state
         p_buffer = optimal_transition_interval(image, full_state, process_dist, p_buffer, distance_buffer, state_dep_dist)
-        Plow[i,end] = 1 - p_buffer[2]
-        Phigh[i,end] = 1 - p_buffer[1]
+        Plow[end,i] = 1 - p_buffer[2]
+        Phigh[end,i] = 1 - p_buffer[1]
         next!(progress_meter)
     end
 
