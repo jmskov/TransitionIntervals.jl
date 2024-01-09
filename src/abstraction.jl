@@ -1,15 +1,51 @@
 # Functions for abstraction
+Base.@kwdef struct AbstractionProblem
+    compact_space::Matrix{Float64}
+    spacing::Vector{Float64}
+    image_map::Function # function
+    process_noise_distribution::Distribution = Normal(0.0, 0.0)
+    state_dependent_uncertainty_map::Union{Nothing, Function} = nothing
+end
+
+Base.@kwdef struct Abstraction
+    states::Vector{Matrix{Float64}}
+    images::Vector{Matrix{Float64}}
+    Plow::SparseMatrixCSC{Float64,Int64}
+    Phigh::SparseMatrixCSC{Float64,Int64}
+    uncertainties::Union{Nothing, Vector{Float64}} = nothing
+end
+
+function imc_abstraction(problem::AbstractionProblem)
+    return Abstraction(Stochascape.imc_abstraction(problem.compact_space, problem.spacing, problem.image_map, problem.process_noise_distribution, problem.state_dependent_uncertainty_map)...)
+end
 
 # Full abstraction
-function imc_abstraction(full_state, spacing, image_map, noise_distribution)
+function imc_abstraction(full_state, spacing, image_map, noise_distribution, uncertainty_fcn::Union{Nothing, Function}=nothing)
     grid, grid_spacing = grid_generator(full_state[:,1], full_state[:,2], spacing)
     states = calculate_explicit_states(grid, grid_spacing)
     images = calculate_all_images(states, image_map)
-    Plow, Phigh = calculate_transition_probabilities(states, images, full_state, noise_distribution)
-    return states, images, Plow, Phigh
+
+    if !isnothing(uncertainty_fcn)
+        uncertainties = zeros(length(states))
+        uncertainties = bound_sigmas!(uncertainties, states, uncertainty_fcn) 
+        # todo: save these?
+    else
+        uncertainties = nothing 
+    end
+
+    Plow, Phigh = calculate_transition_probabilities(states, images, full_state, noise_distribution, uncertainties)
+    return states, images, Plow, Phigh, uncertainties
 end
 
-# todo: abstraction here with uncertainty bounds?
+function bound_sigmas!(sigmas, states, sigma_fcn)
+    @info "bounding sigmas..."
+    Threads.@threads for i in eachindex(states)
+        sigma_bnd = sigma_fcn(states[i], thread_idx=Threads.threadid())[1]
+        sigmas[i] = sigma_bnd
+    end
+    @info "Done bounding sigmas!"
+    return sigmas
+end
 
 # States
 function grid_generator(L, U, δ)

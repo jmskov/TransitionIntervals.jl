@@ -170,7 +170,7 @@ function calculate_transition_probabilities(states::Vector{Matrix{Float64}}, ima
 
     for (i, image) in enumerate(images)
         if isnothing(state_dep_sigmas)
-            state_dep_dist = nothing
+            state_dep_dist = Normal(0.0, 0.0)
         else
             state_dep_dist = UniformError(state_dep_sigmas[i], 1.0)
         end

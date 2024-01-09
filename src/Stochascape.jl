@@ -23,6 +23,7 @@ include("transitions.jl")
 include("refinement.jl")
 include("merging.jl")
 include("cluster.jl")
+include("output.jl")
 include("utilities.jl")
 include("visualize.jl")
 
