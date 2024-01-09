@@ -19,6 +19,20 @@ function imc_abstraction(problem::AbstractionProblem)
     return Abstraction(Stochascape.imc_abstraction(problem.compact_space, problem.spacing, problem.image_map, problem.process_noise_distribution, problem.state_dependent_uncertainty_map)...)
 end
 
+function update_abstraction!(abstraction::Abstraction, problem::AbstractionProblem, image_map::Function, uncertainty_map::Union{Nothing, Function}=nothing)
+
+    abstraction.images[:] = calculate_all_images(abstraction.states, image_map)
+    if !isnothing(uncertainty_map)
+        bound_sigmas!(abstraction.uncertainties, abstraction.states, uncertainty_map)
+        # todo: check uncertainties here
+    end
+
+    Plow, Phigh = calculate_transition_probabilities(abstraction.states, abstraction.images, problem.compact_space, problem.process_noise_distribution, abstraction.uncertainties)
+    abstraction.Plow[:] = Plow
+    abstraction.Phigh[:] = Phigh
+    return abstraction
+end
+
 # Full abstraction
 function imc_abstraction(full_state, spacing, image_map, noise_distribution, uncertainty_fcn::Union{Nothing, Function}=nothing)
     grid, grid_spacing = grid_generator(full_state[:,1], full_state[:,2], spacing)
@@ -27,7 +41,7 @@ function imc_abstraction(full_state, spacing, image_map, noise_distribution, unc
 
     if !isnothing(uncertainty_fcn)
         uncertainties = zeros(length(states))
-        uncertainties = bound_sigmas!(uncertainties, states, uncertainty_fcn) 
+        bound_sigmas!(uncertainties, states, uncertainty_fcn) 
         # todo: save these?
     else
         uncertainties = nothing 
@@ -38,12 +52,10 @@ function imc_abstraction(full_state, spacing, image_map, noise_distribution, unc
 end
 
 function bound_sigmas!(sigmas, states, sigma_fcn)
-    @info "bounding sigmas..."
     Threads.@threads for i in eachindex(states)
         sigma_bnd = sigma_fcn(states[i], thread_idx=Threads.threadid())[1]
         sigmas[i] = sigma_bnd
     end
-    @info "Done bounding sigmas!"
     return sigmas
 end
 
