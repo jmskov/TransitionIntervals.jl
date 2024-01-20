@@ -5,6 +5,7 @@ Base.@kwdef struct AbstractionProblem
     image_map::Function # function
     process_noise_distribution::Distribution = Normal(0.0, 0.0)
     state_dependent_uncertainty_map::Union{Nothing, Function} = nothing
+    uniform_error_distribution::Union{Nothing, Distribution} = nothing
 end
 
 Base.@kwdef struct Abstraction
@@ -16,25 +17,54 @@ Base.@kwdef struct Abstraction
 end
 
 function imc_abstraction(problem::AbstractionProblem)
-    return Abstraction(Stochascape.imc_abstraction(problem.compact_space, problem.spacing, problem.image_map, problem.process_noise_distribution, problem.state_dependent_uncertainty_map)...)
+    return Abstraction(Stochascape.imc_abstraction(problem.compact_space, problem.spacing, problem.image_map, problem.process_noise_distribution, problem.state_dependent_uncertainty_map, problem.uniform_error_distribution)...)
 end
 
-function update_abstraction!(abstraction::Abstraction, problem::AbstractionProblem, image_map::Function, uncertainty_map::Union{Nothing, Function}=nothing)
+function update_abstraction!(abstraction::Abstraction, problem::AbstractionProblem, image_map::Function, uncertainty_map::Union{Nothing, Function}=nothing, uniform_error_distribution::Union{Nothing, Distribution}=nothing)
 
     abstraction.images[:] = calculate_all_images(abstraction.states, image_map)
+
+    uniform_error_dist_local = isnothing(uniform_error_distribution) ? problem.uniform_error_distribution : uniform_error_distribution
+
+    # todo: do this without the copy, it hurtssss
+    old_uncertainties = copy(abstraction.uncertainties)
     if !isnothing(uncertainty_map)
         bound_sigmas!(abstraction.uncertainties, abstraction.states, uncertainty_map)
-        # todo: check uncertainties here
+
+        for i in eachindex(abstraction.states)
+            # check for numerical issues in bounding the uncertainty
+            if abstraction.uncertainties[i] > old_uncertainties[i]
+                abstraction.uncertainties[i] = old_uncertainties[i]
+            end
+        end
     end
 
-    Plow, Phigh = calculate_transition_probabilities(abstraction.states, abstraction.images, problem.compact_space, problem.process_noise_distribution, abstraction.uncertainties)
+    Plow, Phigh = calculate_transition_probabilities(abstraction.states, abstraction.images, problem.compact_space, problem.process_noise_distribution, abstraction.uncertainties, uniform_error_dist_local)
+
+    Plow_old = copy(abstraction.Plow)
+    Phigh_old = copy(abstraction.Phigh)
+
+
     abstraction.Plow[:] = Plow
     abstraction.Phigh[:] = Phigh
+
+    # check for consistency here
+    for i in 1:size(Plow,1)
+        for j in 1:size(Plow,2)
+            if abstraction.Plow[i,j] < Plow_old[i,j]
+                abstraction.Plow[i,j] = Plow_old[i,j]
+            end
+            if abstraction.Phigh[i,j] > Phigh_old[i,j]
+                abstraction.Phigh[i,j] = Phigh_old[i,j]
+            end
+        end
+    end
+
     return abstraction
 end
 
 # Full abstraction
-function imc_abstraction(full_state, spacing, image_map, noise_distribution, uncertainty_fcn::Union{Nothing, Function}=nothing)
+function imc_abstraction(full_state, spacing, image_map, noise_distribution, uncertainty_fcn::Union{Nothing, Function}=nothing, uniform_error_distribution::Union{Nothing, Distribution}=nothing)
     grid, grid_spacing = grid_generator(full_state[:,1], full_state[:,2], spacing)
     states = calculate_explicit_states(grid, grid_spacing)
     images = calculate_all_images(states, image_map)
@@ -47,7 +77,7 @@ function imc_abstraction(full_state, spacing, image_map, noise_distribution, unc
         uncertainties = nothing 
     end
 
-    Plow, Phigh = calculate_transition_probabilities(states, images, full_state, noise_distribution, uncertainties)
+    Plow, Phigh = calculate_transition_probabilities(states, images, full_state, noise_distribution, uncertainties,uniform_error_distribution)
     return states, images, Plow, Phigh, uncertainties
 end
 

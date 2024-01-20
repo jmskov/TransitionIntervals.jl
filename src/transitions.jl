@@ -84,12 +84,21 @@ function optimal_transition_interval(image::Matrix{Float64}, state::Matrix{Float
     p_vector = check_buffer(p_buffer, (2,))
     p_vector[1] = check_zero_one_numerical(p_low_total) 
     p_vector[2] = check_zero_one_numerical(p_high_total)
-    @assert p_vector[1]  <= p_vector[2]
+
+    if p_vector[1] > p_vector[2]
+        if abs(p_vector[1] - p_vector[2]) < 1e-10
+            p_vector[1] = p_vector[2]
+        else
+            @error "p_low > p_high"
+        end
+    end
+
+    # @assert p_vector[1]  <= p_vector[2]
     return p_vector
 end
 
 
-function optimize_dim_low(distances, w_dist, v_dist; ep_resolution::Float64=0.01)
+function optimize_dim_low(distances, w_dist, v_dist; ep_resolution::Float64=0.001)
 
     ep_max = distances[3] - distances[4]
     ep_sweep = 0.0:ep_resolution:ep_max
@@ -103,7 +112,7 @@ function optimize_dim_low(distances, w_dist, v_dist; ep_resolution::Float64=0.01
             u_new = 0.0
         end
 
-        p_low = cdf_interval(w_dist, l_new, u_new)*cdf_interval(v_dist, -ep, ep) 
+        p_low = cdf_interval(w_dist, l_new, u_new)*cdf(v_dist, ep) 
         if p_low > p_best
             p_best = p_low
         end
@@ -114,24 +123,68 @@ function optimize_dim_low(distances, w_dist, v_dist; ep_resolution::Float64=0.01
     return p_best
 end
 
-function optimize_dim_high(distances, w_dist, v_dist; ep_resolution::Float64=0.01)
-    ep_max = distances[1] - distances[2]
-    ep_sweep = 0.0:ep_resolution:ep_max
-    p_best = 1.0
+function new_opt(dist1, dist2, l, u)
+    max_iter = 100
+    ep_start = 2.0
+    ep = ep_start
 
-    for ep in ep_sweep
-        l_new = distances[2] - ep
-        u_new = distances[1] + ep
+    min_iter = 15
+    iter = 0
 
-        v_prob = cdf_interval(v_dist, -ep, ep)
-        p_high = cdf_interval(w_dist, l_new, u_new)*v_prob + (1-v_prob) 
-        if p_high < p_best
-            p_best = p_high
+    val = totalP(dist1, dist2, l, u, ep)
+
+    # else, start working down!
+    del_factor = 2
+    del_steps = 2
+    for i in 1:max_iter
+        ep_low = ep/del_factor
+        new_val = totalP(dist1, dist2, l, u, ep_low)
+        if new_val <= val
+            if new_val < 1.0 && abs(new_val - val) < 1e-2 && iter > min_iter
+                # @info "converged!"
+                # @info "iter: $iter"
+                return ep_low, new_val
+            end
+            val = new_val
+            ep = ep_low
+            # del_steps = 2
+            # del_factor = 2
+        else
+            del_factor = 2^(1/del_steps)
+            del_steps += 1
         end
-        if p_high > p_best 
-            return p_best
-        end
+        iter += 1
     end
+
+    return ep, val
+end
+
+function totalP(dist1, dist2, l, u, ep)
+    p2 = cdf(dist2, ep)
+    return cdf_interval(dist1, l-ep, u+ep)*p2 + 1-p2
+end
+
+function optimize_dim_high(distances, w_dist, v_dist; ep_resolution::Float64=0.0001)
+    # ep_max = distances[1] - distances[2]    # todo: what is this? should there be an ep_min?
+    # ep_sweep = 0.0:ep_resolution:ep_max
+    # p_best = 1.0
+
+    # for ep in ep_sweep
+    #     l_new = distances[2] - ep
+    #     u_new = distances[1] + ep
+
+    #     # v_prob = cdf_interval(v_dist, -ep, ep)
+    #     v_prob = cdf(v_dist, ep)
+    #     p_high = cdf_interval(w_dist, l_new, u_new)*v_prob + (1-v_prob) 
+    #     if p_high < p_best
+    #         p_best = p_high
+    #     end
+    #     if p_high > p_best 
+    #         return p_best
+    #     end
+    # end
+
+    _, p_best = new_opt(w_dist, v_dist, distances[2], distances[1])
     return p_best
 end
 
@@ -159,7 +212,11 @@ function simple_transition_interval(image::Matrix{Float64}, state::Matrix{Float6
     return p_vector
 end
 
-function calculate_transition_probabilities(states::Vector{Matrix{Float64}}, images::Vector{Matrix{Float64}}, full_state::Matrix{Float64}, process_dist::Distribution, state_dep_sigmas::Union{Nothing, Vector{Float64}}=nothing)
+function RKHS_norm_bound(kernel_length, f_sup, state_radius)
+    return f_sup / sqrt(exp(-1/2*(2*state_radius)^2/exp(kernel_length)))    # todo: need to double check this bound...
+end
+
+function calculate_transition_probabilities(states::Vector{Matrix{Float64}}, images::Vector{Matrix{Float64}}, full_state::Matrix{Float64}, process_dist::Distribution, state_dep_sigmas::Union{Nothing, Vector{Float64}}=nothing, uniform_error_dist::Distribution=Normal(0.0, 0.0))
     nstates = length(states)+1
     Plow, Phigh = initialize_transition_matrices(nstates)
     n_transitions = nstates^2
@@ -172,7 +229,10 @@ function calculate_transition_probabilities(states::Vector{Matrix{Float64}}, ima
         if isnothing(state_dep_sigmas)
             state_dep_dist = Normal(0.0, 0.0)
         else
-            state_dep_dist = UniformError(state_dep_sigmas[i], 1.0)
+            uniform_error_dist.sigma = state_dep_sigmas[i]
+            state_radius = sqrt(sum((states[i][:,2] - states[i][:,1]).^2))
+            uniform_error_dist.norm_bound = RKHS_norm_bound(uniform_error_dist.kernel_length, uniform_error_dist.f_sup, state_radius)
+            state_dep_dist = uniform_error_dist
         end
 
         for (j, state) in enumerate(states)

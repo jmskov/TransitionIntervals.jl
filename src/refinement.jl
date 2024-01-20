@@ -13,18 +13,18 @@ function refine_abstraction(problem::AbstractionProblem, abstraction::Abstractio
         new_uncertainties = zeros(length(new_states))
     end
 
-    Plow_new, Phigh_new = refine_transitions(new_states, new_state_index_dict, new_images, refinement_idxs, abstraction.Plow, abstraction.Phigh, problem.compact_space, problem.process_noise_distribution, new_uncertainties)
+    Plow_new, Phigh_new = refine_transitions(new_states, new_state_index_dict, new_images, refinement_idxs, abstraction.Plow, abstraction.Phigh, problem.compact_space, problem.process_noise_distribution, new_uncertainties, problem.uniform_error_distribution)
 
     return Abstraction(new_states, new_images, Plow_new, Phigh_new, new_uncertainties)
 end
 
 
 # refine abstraction
-function refine_abstraction(result_matrix, threshold, states, images, Plow, Phigh, full_state, noise_distribution, image_map)
+function refine_abstraction(result_matrix, threshold, states, images, Plow, Phigh, full_state, noise_distribution, image_map, uniform_error_distribution)
     states_to_refine, _ = find_states_to_refine(result_matrix, threshold, Phigh) 
     new_state_index_dict = refine_states!(states, states_to_refine)
     refine_images!(states, images, states_to_refine, image_map)
-    new_Plow, new_Phigh = refine_transitions(states, new_state_index_dict, images, states_to_refine, Plow, Phigh, full_state, noise_distribution)
+    new_Plow, new_Phigh = refine_transitions(states, new_state_index_dict, images, states_to_refine, Plow, Phigh, full_state, noise_distribution, uniform_error_distribution)
     return new_Plow, new_Phigh
 end
 
@@ -276,7 +276,7 @@ end
 #     return Plow_new, Phigh_new
 # end
 
-function refine_transitions(explicit_states, state_index_dict, state_images, states_to_refine, Plow, Phigh, compact_state, process_dist, state_dep_sigmas=zeros(length(explicit_states)))
+function refine_transitions(explicit_states, state_index_dict, state_images, states_to_refine, Plow, Phigh, compact_state, process_dist, state_dep_sigmas=zeros(length(explicit_states)), uniform_error_dist::Distribution=Normal(0.0, 0.0))
 
     # todo: break up this function
     n_states_new = length(explicit_states) + 1 # add one for the sink state
@@ -350,9 +350,15 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
 
     progress_meter = Progress(num_new_state_transitions, desc="Calculating refined transitions from refined states...", dt=STATUS_BAR_PERIOD)
     Threads.@threads for i in num_unrefined_states+1:n_states_new-1
-        learning_dist = Stochascape.UniformError(state_dep_sigmas[i], 1.0)
+        # learning_dist = Stochascape.UniformError(state_dep_sigmas[i], 2.0, -1.0)
+
+        uniform_error_dist_local = deepcopy(uniform_error_dist)
+        uniform_error_dist_local.sigma = state_dep_sigmas[i]
+        state_radius = sqrt(sum((explicit_states[i][:,2] - explicit_states[i][:,1]).^2))
+        uniform_error_dist_local.norm_bound = RKHS_norm_bound(uniform_error_dist_local.kernel_length, uniform_error_dist_local.f_sup, state_radius)
+
         target_idxs = refined_states_to_recomp[i]
-        @views process_col!(P_low_buffers[Threads.threadid()][:, i], P_high_buffers[Threads.threadid()][:, i], explicit_states, state_images[i], compact_state, target_idxs, process_dist, p_buffers[Threads.threadid()], distance_buffers[Threads.threadid()], learning_dist)
+        @views process_col!(P_low_buffers[Threads.threadid()][:, i], P_high_buffers[Threads.threadid()][:, i], explicit_states, state_images[i], compact_state, target_idxs, process_dist, p_buffers[Threads.threadid()], distance_buffers[Threads.threadid()], uniform_error_dist_local)
     end 
 
     # Now, recompute the transitions between old unrefined states and new refined states
@@ -366,7 +372,11 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
         target_set = unrefined_states_to_recomp[unrefined_state_index]
         new_index = get_refined_index(unrefined_state_index, states_to_refine)
 
-        learning_dist = Stochascape.UniformError(state_dep_sigmas[idx], 1.0)
+        # learning_dist = Stochascape.UniformError(state_dep_sigmas[idx], 2.0, -1.0)
+        uniform_error_dist_local = deepcopy(uniform_error_dist)
+        uniform_error_dist_local.sigma = state_dep_sigmas[idx]
+        state_radius = sqrt(sum((explicit_states[idx][:,2] - explicit_states[idx][:,1]).^2))
+        uniform_error_dist_local.norm_bound = RKHS_norm_bound(uniform_error_dist_local.kernel_length, uniform_error_dist_local.f_sup, state_radius)
 
         for b in eachindex(target_set) #target_indeces in target_set
             target_indeces = target_set[b]
@@ -384,7 +394,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
             else
                 for target_idx in target_indeces
                     # ! todo: handle the zero image case...
-                    optimal_transition_interval(state_images[new_index], explicit_states[target_idx], process_dist, p_buffers[Threads.threadid()], distance_buffers[Threads.threadid()], learning_dist)
+                    optimal_transition_interval(state_images[new_index], explicit_states[target_idx], process_dist, p_buffers[Threads.threadid()], distance_buffers[Threads.threadid()], uniform_error_dist_local)
                         @views P_low_buffers[Threads.threadid()][target_idx, new_index] = p_buffers[Threads.threadid()][1]
                         @views P_high_buffers[Threads.threadid()][target_idx, new_index] = p_buffers[Threads.threadid()][2]
                 end
@@ -396,6 +406,7 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
     Phigh_new = sum(P_high_buffers)
 
     i = 1
+    # @assert size(Plow_new,1) ∉ unrefined_states
     for unrefined_state_index in unrefined_states
         j = 1
         for target_unrefined_idx in unrefined_states 
@@ -403,16 +414,24 @@ function refine_transitions(explicit_states, state_index_dict, state_images, sta
             Phigh_new[j, i] = Phigh[target_unrefined_idx, unrefined_state_index] 
             j += 1
         end
-        Plow_new[i, end] = Plow[end, unrefined_state_index]
-        Phigh_new[i, end] = Phigh[end, unrefined_state_index]
+        Plow_new[end, i] = Plow[end, unrefined_state_index]
+        Phigh_new[end, i] = Phigh[end, unrefined_state_index]
         i += 1
     end
     Plow_new[end,end] = 1.0 
     Phigh_new[end,end] = 1.0
 
     # Verify the transition matrices
+    # i = 1
+
+    # @info "sum of last col: ", sum(Plow_new[:, end]) 
     for col in eachcol(Plow_new)
+        # if sum(col) > 1.0
+        #     @info "sum(col) = $(sum(col))"
+        #     @info "in the $(i)th column of Plow_new our of $(size(Plow_new,2))"
+        # end
         @assert sum(col) <= 1.0
+        # i += 1
     end
     for col in eachcol(Phigh_new)
         @assert sum(col) >= 1.0
