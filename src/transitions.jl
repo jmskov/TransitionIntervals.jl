@@ -124,7 +124,7 @@ function optimize_dim_low(distances, w_dist, v_dist; ep_resolution::Float64=0.00
 end
 
 function new_opt(dist1, dist2, l, u)
-    max_iter = 100
+    max_iter = 30
     ep_start = 2.0
     ep = ep_start
 
