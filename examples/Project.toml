@@ -1,0 +1,5 @@
+[deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+IMDPs = "facd0f59-d146-4cf0-80be-65a31ff3c170"
+IntervalMDP = "051c988a-e73c-45a4-90ec-875cac0402c7"
+TransitionIntervals = "fe4461bf-3609-400d-85d7-d42d16fd8269"

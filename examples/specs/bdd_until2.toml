@@ -1,0 +1,22 @@
+name = "bounded-until"
+steps = -1 
+dims = 2 
+phi1 = "!a∧!b" 
+phi2 = "a∧!b"
+default = "!a∧!b"
+unsafe = "!a∧b"
+default_outside_compact=false
+
+[labels]
+# Lower, lower, upper, upper --  depends on dimension.
+phi1 = []
+phi2 = [
+          [-0.5, -0.5, 0.0, 0.0],
+          [0.0, 0.0, 0.5, 0.5],
+       ]
+unsafe = [
+          [-0.5, 0.0, 0.0, 0.5],
+          [0.0, -0.5, 0.5, 0.0]
+         ]
+
+map = ["", "G", "O"]
