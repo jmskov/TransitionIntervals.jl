@@ -3,7 +3,6 @@ Base.@kwdef struct AbstractionProblem
     discreization::Discreteization
     image_map::Function # function
     process_noise_distribution::Union{Nothing, Distribution} = nothing
-    state_dependent_uncertainty_map::Union{Nothing, Function} = nothing
     uniform_error_distribution::Union{Nothing, Function, Distribution} = nothing
 end
 
@@ -15,7 +14,7 @@ Base.@kwdef struct Abstraction
 end
 
 function transition_intervals(problem::AbstractionProblem)
-    return transition_intervals(problem.discreization, problem.image_map, problem.process_noise_distribution, problem.state_dependent_uncertainty_map, problem.uniform_error_distribution)
+    return transition_intervals(problem.discreization, problem.image_map, problem.process_noise_distribution, problem.uniform_error_distribution)
 end
 
 function transition_intervals(discretization::Discreteization, image_map::Union{Function, Matrix{Float64}})
