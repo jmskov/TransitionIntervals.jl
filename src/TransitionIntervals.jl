@@ -16,7 +16,6 @@ global STATIC_PARTITION_BOUNDS = [-1.0, 1.0]
 
 using Plots
 import Plots.plot
-using Colors
 
 include("utilities.jl")
 export UniformError
