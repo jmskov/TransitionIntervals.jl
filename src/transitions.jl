@@ -319,7 +319,7 @@ function calculate_transition_probabilities(states::Vector{DiscreteState}, image
             state_dep_dist = uniform_error_dist
         end
 
-        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, full_state, process_dist, state_dep_dist,p_buffer, distance_buffer)
+        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, full_state, process_dist, state_dep_dist, p_buffer, distance_buffer)
         next!(progress_meter)
     end
 
@@ -337,7 +337,6 @@ function calculate_transition_probabilities(states::Vector{DiscreteState}, image
     distance_buffer = zeros(length(images[1].lower), 4)
 
     for (i, image) in enumerate(images)
-
         if uniform_error_dist isa Function
             @views state_dep_dist = uniform_error_dist(states[i].lower, states[i].upper, thread_idx=1)
         else

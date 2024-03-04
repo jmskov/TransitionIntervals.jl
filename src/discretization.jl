@@ -6,10 +6,10 @@ struct DiscreteState
     upper::Vector{Float64}
 end
 
-abstract type Discreteization end;
+abstract type Discretization end;
 
 # components that define a uniform discretization
-struct UniformDiscretization <: Discreteization
+struct UniformDiscretization <: Discretization
     compact_space::DiscreteState 
     spacing::Vector{Float64}    # todo: better name?
 end
@@ -57,6 +57,12 @@ function explicit_states(grid::Iterators.ProductIterator)
         states[i] = state
     end
     return states
+end
+
+# both
+function discretize(discretization::Discretization)
+    grid = grid_generator(discretization)
+    return explicit_states(grid)
 end
 
 """

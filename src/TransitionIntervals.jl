@@ -21,6 +21,7 @@ include("utilities.jl")
 export UniformError
 
 include("discretization.jl")
+export discretize
 export DiscreteState, UniformDiscretization
 
 include("image.jl")
