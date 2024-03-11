@@ -278,7 +278,7 @@ function calculate_transition_probabilities(states::Vector{DiscreteState}, image
     p_buffer = zeros(2)
     # todo: parallelize this and test - might need buffers and then sum,,,
     for (i, image) in enumerate(images)
-        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, p_buffer)
+        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, p_buffer, targets=targets)
         next!(progress_meter)
     end
 
@@ -350,7 +350,7 @@ function calculate_transition_probabilities(states::Vector{DiscreteState}, image
             state_dep_dist = uniform_error_dist
         end
 
-        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, process_dist, state_dep_dist, p_buffer, distance_buffer)
+        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, process_dist, state_dep_dist, p_buffer, distance_buffer, targets=targets)
         next!(progress_meter)
     end
 
