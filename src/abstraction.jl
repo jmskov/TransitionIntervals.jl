@@ -50,13 +50,13 @@ end
 function transition_intervals(states::Vector{DiscreteState}, images::Vector{DiscreteState}, discretization::Discretization,  noise_distribution::Union{Nothing, Distribution}, uniform_error_distribution::Union{Nothing, Function, Distribution}) 
 
     if isnothing(noise_distribution) && isnothing(uniform_error_distribution)
-        Plow, Phigh = calculate_transition_probabilities(states, images, discretization.compact_space)
+        Plow, Phigh = calculate_transition_probabilities(states, images, discretization)
     elseif isnothing(uniform_error_distribution)
-        Plow, Phigh = calculate_transition_probabilities(states, images, discretization.compact_space, noise_distribution)
+        Plow, Phigh = calculate_transition_probabilities(states, images, discretization, noise_distribution)
     elseif isnothing(noise_distribution)
-        Plow, Phigh = calculate_transition_probabilities(states, images, discretization.compact_space, uniform_error_distribution)
+        Plow, Phigh = calculate_transition_probabilities(states, images, discretization, uniform_error_distribution)
     else
-        Plow, Phigh = calculate_transition_probabilities(states, images, discretization.compact_space, noise_distribution, uniform_error_distribution)
+        Plow, Phigh = calculate_transition_probabilities(states, images, discretization, noise_distribution, uniform_error_distribution)
     end
 
     return Abstraction(states, images, Plow, Phigh)

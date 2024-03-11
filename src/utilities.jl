@@ -64,6 +64,7 @@ function check_zero_one_numerical(val, eps=1e-10)
 end
 
 function validate_transition_matrices(Plow, Phigh)
+    @assert all(Plow .≤ Phigh)
     for col in eachcol(Plow)
         @assert sum(col) <= 1.0
     end

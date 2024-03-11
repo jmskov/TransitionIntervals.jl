@@ -1,9 +1,32 @@
 function initialize_transition_matrices(nstates)
-    Plow = spzeros(nstates, nstates)
-    Phigh = spzeros(nstates, nstates)
+    return initialize_transition_matrices(nstates, nstates)
+end
+
+function initialize_transition_matrices(nstates_src::Int, nstates_dst::Int)
+    Plow = spzeros(nstates_dst, nstates_src)
+    Phigh = spzeros(nstates_dst, nstates_src)
     Plow[end,end] = 1.0
     Phigh[end,end] = 1.0
     return Plow, Phigh
+end
+
+function transition_targets(states::Vector{DiscreteState}, images::Vector{DiscreteState}, discretization::Discretization)
+    ndims_in = length(states[1].lower)
+    ndims_out = length(images[1].lower)
+    if ndims_in > ndims_out
+        n_assym = ndims_in - ndims_out
+        # use discretization to find # of control regions
+        num_control = 1
+        for i = 1:n_assym
+            del = discretization.compact_space.upper[end-i+1] - discretization.compact_space.lower[end-i+1]
+            num_control *= Int(del / discretization.spacing[end-i+1])
+        end
+        num_states = Int(length(states) / num_control)
+        targets = 1:num_states
+    else
+        targets = 1:length(states)
+    end
+    return targets
 end
 
 # gets the distance function
@@ -245,15 +268,17 @@ end
 
 # todo: the following has a lot of repeated code. consolidate, but smartly
 # calculate transition probabilities, deterministic
-function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, full_state::DiscreteState)
-    nstates = length(states)+1
-    Plow, Phigh = initialize_transition_matrices(nstates)
-    progress_meter = Progress(nstates, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
+function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, discretization::Discretization)
+    targets = transition_targets(states, images, discretization)
+    num_src = length(states) + 1
+    num_dst = length(targets) + 1
+    Plow, Phigh = initialize_transition_matrices(num_src, num_dst)
+    progress_meter = Progress(num_dst, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
 
     p_buffer = zeros(2)
     # todo: parallelize this and test - might need buffers and then sum,,,
     for (i, image) in enumerate(images)
-        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, full_state, p_buffer)
+        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, p_buffer)
         next!(progress_meter)
     end
 
@@ -275,15 +300,18 @@ function transition_col!(plow_col, phigh_col, states::Vector{DiscreteState}, ima
 end
 
 # calculate transition probabilities, process noise
-function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, full_state::DiscreteState, process_dist::Distribution)
-    Plow, Phigh = initialize_transition_matrices(length(states)+1)
-    progress_meter = Progress(length(states)+1, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
+function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, discretization::Discretization, process_dist::Distribution)
+    targets = transition_targets(states, images, discretization)
+    num_src = length(states) + 1
+    num_dst = length(targets) + 1
+    Plow, Phigh = initialize_transition_matrices(num_src, num_dst)
+    progress_meter = Progress(num_dst, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
 
     p_buffer = zeros(2)
     distance_buffer = zeros(length(images[1].lower), 4)
 
     for (i, image) in enumerate(images)
-        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, full_state, process_dist, p_buffer, distance_buffer)
+        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, process_dist, p_buffer, distance_buffer, targets=targets)
         next!(progress_meter)
     end
 
@@ -304,9 +332,12 @@ function transition_col!(plow_col, phigh_col, states::Vector{DiscreteState}, ima
     return plow_col, phigh_col
 end
 
-function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, full_state::DiscreteState, process_dist::Distribution, uniform_error_dist::Union{Function, UniformError})
-    Plow, Phigh = initialize_transition_matrices(length(states)+1)
-    progress_meter = Progress(length(states)+1, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
+function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, discretization::Discretization, process_dist::Distribution, uniform_error_dist::Union{Function, UniformError})
+    targets = transition_targets(states, images, discretization)
+    num_src = length(states) + 1
+    num_dst = length(targets) + 1
+    Plow, Phigh = initialize_transition_matrices(num_src, num_dst)
+    progress_meter = Progress(num_dst, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
 
     p_buffer = zeros(2)
     distance_buffer = zeros(length(images[1].lower), 4)
@@ -319,7 +350,7 @@ function calculate_transition_probabilities(states::Vector{DiscreteState}, image
             state_dep_dist = uniform_error_dist
         end
 
-        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, full_state, process_dist, state_dep_dist, p_buffer, distance_buffer)
+        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, process_dist, state_dep_dist, p_buffer, distance_buffer)
         next!(progress_meter)
     end
 
@@ -329,9 +360,13 @@ function calculate_transition_probabilities(states::Vector{DiscreteState}, image
     return Plow, Phigh
 end
 
-function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, full_state::DiscreteState, uniform_error_dist::Union{Function, UniformError})
-    Plow, Phigh = initialize_transition_matrices(length(states)+1)
-    progress_meter = Progress(length(states)+1, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
+
+function calculate_transition_probabilities(states::Vector{DiscreteState}, images::Vector{DiscreteState}, discretization::Discretization, uniform_error_dist::Union{Function, UniformError})
+    targets = transition_targets(states, images, discretization)
+    num_src = length(states) + 1
+    num_dst = length(targets) + 1
+    Plow, Phigh = initialize_transition_matrices(num_src, num_dst)
+    progress_meter = Progress(num_dst, desc="Computing transition intervals...", dt=STATUS_BAR_PERIOD, enabled=ENABLE_PROGRESS_BAR)
 
     p_buffer = zeros(2)
     distance_buffer = zeros(length(images[1].lower), 4)
@@ -343,7 +378,7 @@ function calculate_transition_probabilities(states::Vector{DiscreteState}, image
             state_dep_dist = uniform_error_dist
         end
 
-        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, full_state, state_dep_dist, p_buffer, distance_buffer)
+        Plow[:,i], Phigh[:,i] = transition_col!(Plow[:,i], Phigh[:,i], states, image, discretization.compact_space, state_dep_dist, p_buffer, distance_buffer, targets=targets)
         next!(progress_meter)
     end
 
